@@ -35,17 +35,21 @@ public struct LayoutNode {
     public var measure: LeafMeasure?
     /// An object the caller associates with the node (a platform view, say). The solver never looks at it.
     public var content: AnyObject?
+    /// Told where the node ends up. The solver never looks at it; the host does.
+    public var guide: LayoutGuide?
 
     public init(
         style: LayoutStyle = LayoutStyle(),
         children: [LayoutNode] = [],
         measure: LeafMeasure? = nil,
-        content: AnyObject? = nil
+        content: AnyObject? = nil,
+        guide: LayoutGuide? = nil
     ) {
         self.style = style
         self.children = children
         self.measure = measure
         self.content = content
+        self.guide = guide
     }
 
     /// The leaves of this subtree in depth-first order, matching `ResolvedLayout.leaves` element for element.
