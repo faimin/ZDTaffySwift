@@ -1,0 +1,26 @@
+name: ZDLayoutDemo
+options:
+  bundleIdPrefix: dev.zd
+  deploymentTarget:
+    iOS: "15.0"
+packages:
+  ZDTaffy:
+    path: ..
+targets:
+  ZDLayoutDemo:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: ZDTaffy
+        product: ZDLayout
+      - package: ZDTaffy
+        product: ZDLayoutCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.zd.ZDLayoutDemo
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
+        TARGETED_DEVICE_FAMILY: "1"
