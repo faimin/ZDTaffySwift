@@ -29,6 +29,7 @@ open class FlexScrollView: UIScrollView, LayoutMeasurable {
         self.axis = axis
         contentBuilder = nil
         super.init(frame: .zero)
+        configureMargins()
     }
 
     public init(axis: Axis = .vertical, insets: FlexInsets = .none, @LayoutBuilder content: @escaping @MainActor () -> [LayoutNode]) {
@@ -36,12 +37,20 @@ open class FlexScrollView: UIScrollView, LayoutMeasurable {
         contentBuilder = content
         self.insets = insets
         super.init(frame: .zero)
+        configureMargins()
     }
 
     public required init?(coder: NSCoder) {
         axis = .vertical
         contentBuilder = nil
         super.init(coder: coder)
+        configureMargins()
+    }
+
+    /// A scroll view already makes room for the safe area through `contentInsetAdjustmentBehavior`; letting the
+    /// layout margins include it too would count it twice (a tall empty band above the content).
+    private func configureMargins() {
+        insetsLayoutMarginsFromSafeArea = false
     }
 
     @LayoutBuilder

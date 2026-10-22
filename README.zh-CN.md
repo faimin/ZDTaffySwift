@@ -138,9 +138,9 @@ let header = FlexView(insets: .layoutMargins) {
 ```
 
 - **容器**:`Row`、`Column`、`Flex(direction:wrap:)`、`Grid`,以及 `Spacer`。没有 `ZStack`;需要重叠时给子项加 `.absolute(inset:)`。
-- **叶子**:任何你自己持有的 `UIView` 都可以直接放进 builder。少量薄封装(`Label("text")` 等)会替你创建视图。
+- **叶子**:任何你自己持有的 `UIView` 都可以直接放进 builder;也可以用 `Label`、`Image`、`Box`、`Managed` 让宿主替你创建视图(见下文)。
 - **修饰符**(`.width`、`.height`、`.size`、`.grow`、`.shrink`、`.basis`、`.margin`、`.padding`、`.absolute(inset:)`、`.gridColumn(_:span:)`、`.hidden()`、`.styled { }` 等)修改的都是同一个值类型 `Style`,它对应 `ZDTaffy.Style`。`.styled { $0.… }` 修改完整的 `LayoutStyle`,`.custom { $0.… }` 则直接访问底层的 `ZDTaffy.Style`,所以 Taffy 能做的事都能做到。
-- **值**:数字就是 point(`.width(100)`);百分比写 `.percent(50)` 或 `50.percent`,有意不提供 `50%` 运算符。公开 API 统一用 `CGFloat`,转成 Taffy 的 `Float` 在内部完成。
+- **值**:数字就是 point(`.width(100)`);`CGFloat` 变量也可以(`.height(1 / scale)`);百分比写 `.percent(50)` 或 `50.percent`,有意不提供 `50%` 运算符。公开 API 统一用 `CGFloat`,转成 Taffy 的 `Float` 在内部完成。
 
 ```swift
 Grid(columns: [.fixed(80), .fr(1), .fr(2)], rows: [.auto], gap: 8) {
@@ -178,9 +178,9 @@ Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、
 | 方面 | 行为 | 原因 / 需要知道的 |
 |---|---|---|
 | **隐藏视图** | `isHidden == true` 的视图被当作 `display: none`,不占空间(相当于旧库的 `gone`)。每次布局开始时读取。 | 符合最常见的意图。UIKit 里切换 `isHidden` 本身不会触发布局,切换后要调用 `setNeedsLayout()`。想隐藏但保留占位,用 `alpha = 0`。 |
-| **从右到左** | 方向跟随容器的 `effectiveUserInterfaceLayoutDirection`,`leading` / `trailing` 内边距和 `Row` 的顺序自动翻转。 | 边距只有逻辑方向(`leading` / `trailing`),没有物理的 `left` / `right`;确实需要时用 `.custom`。 |
-| **像素对齐** | 关闭 Taffy 自带的整数取整,由框架按屏幕 `scale` 对齐(2x 屏 0.5pt 步长,3x 屏 0.333pt)。 | Taffy 取整到整数 point,在 2x / 3x 屏上会模糊或出现缝隙。对齐只在最终结果上做一次,舍入误差不会累积到兄弟节点。 |
-| **安全区** | 默认**不**考虑。在顶层容器上显式开启:`FlexView(insets: .safeArea) { … }` 或 `.layoutMargins`。 | 大多数容器是嵌套的,不能重复加内边距。 |
+| **从右到左** | 由最近一个强制了 `semanticContentAttribute` 的视图(容器自己或祖先)决定,否则取系统方向,`leading` / `trailing` 内边距和 `Row` 的顺序自动翻转。 | 边距只有逻辑方向(`leading` / `trailing`),没有物理的 `left` / `right`;确实需要时用 `.custom`。 |
+| **像素对齐** | 关闭 Taffy 自带的整数取整,由框架按屏幕 `scale` 对齐(2x 屏 0.5pt 步长,3x 屏 0.333pt)。盒子左右边缘各自对齐,相邻节点保持贴合;有内容测量的视图,位置取整、尺寸**向上**取整。 | Taffy 取整到整数 point,在 2x / 3x 屏上会模糊或出现缝隙。对齐只在最终结果上做一次,舍入误差不会累积。内容向上取整很关键:标签被对齐得比文字窄 1/3pt 就会截断(Demo 里 `128` 曾变成 `1…`)。 |
+| **安全区** | 默认**不**考虑。在顶层容器上显式开启:`FlexView(insets: .safeArea) { … }` 或 `.layoutMargins`。 | 大多数容器是嵌套的,不能重复加内边距。`FlexScrollView` 已经通过 `contentInsetAdjustmentBehavior` 给安全区留了位置,所以它在 `.layoutMargins` 里忽略安全区(否则内容会整整低一个导航栏的高度)。 |
 
 ### 取舍:子项默认不收缩
 
@@ -216,6 +216,22 @@ cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
 
 高度取决于宽度,但 Auto Layout 只会询问固有尺寸。和 `UILabel` 一样,`FlexView` 报告的是当前宽度下的高度,宽度变化时在 `layoutSubviews` 里调用一次 `invalidateIntrinsicContentSize()`。这一点已在模拟器上用 `UICollectionView` 列表和使用 `automaticDimension` 的 `UITableView` 验证。
 
+### 由框架创建的视图
+
+除了你自己的 `UIView`,还有几个薄封装用来描述由宿主创建、缓存和更新的视图:`Label("text", font:color:lines:)`、`Image(image, tint:)`、`Box(color:cornerRadius:)`,以及用于其他类型的 `Managed<V>(make:update:)`。
+
+```swift
+Managed<UISwitch>(id: "notifications", make: { UISwitch() }) { $0.isOn = isOn }
+```
+
+`body()` 每次布局都会执行,所以它们是"描述"而不是视图:背后的视图被缓存并复用,每次布局都会对它调用 `update`。视图的身份是它的 `id`,没有 `id` 时是它在同类型、无名描述中的位置。带状态的视图(动画、输入框)应该给 `id`,这样前面的兄弟因 `if` 增减时它不会换成另一个对象。描述不再提到的缓存视图会被移除。`make` 是多语句闭包时要显式写 `Managed<UISwitch>(…)`,因为 Swift 无法从多语句闭包推断类型。
+
+`Label` 默认会换行;要让它在其他视图旁边换行或截断,加 `.shrink(1)`。
+
+### 虚拟容器
+
+`Row`、`Column`、`Flex`、`Grid`、`Spacer` 只是布局节点,从不创建 `UIView`:无论描述嵌套多深,视图层级里只有叶子。这正是其他框架里 `UILayoutGuide` / ZDFlexLayoutKit 的 `ZDFlexLayoutDiv` 的用途。
+
 ### 其他决策
 
 | 主题 | 决定 | 没有采用的方案及原因 |
@@ -228,6 +244,16 @@ cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
 | Cell | 依赖 UIKit 原生 self-sizing。`FlexContentConfiguration { … }`(一个 `UIContentConfiguration`)让 table / collection 的 cell 直接用 DSL。 | 有了 self-sizing 和 `UIContentConfiguration`,模板 cell 算高度的辅助类已经过时。 |
 | 旧 API | 不提供与 ZDFlexLayoutKit 的兼容层。 | 背负旧 API 会限制新设计。虚拟容器、自动刷新、cell 自适应只作为概念保留。 |
 | Objective-C | 不支持。 | result builder 和泛型没有 ObjC 对应物。 |
+
+### Demo
+
+`Demo/` 是一个小 App(个人资料、网格相册、自适应高度的信息流、设置表单),用来在真实屏幕上检验框架。用 [XcodeGen](https://github.com/yonaskolb/XcodeGen) 生成工程并运行:
+
+```bash
+cd Demo && xcodegen generate && open ZDLayoutDemo.xcodeproj
+```
+
+启动参数 `-tab 0…3` 和 `-rtl YES` 可以选择页面和从右到左布局,截图时很方便。
 
 ### 调试与测试
 

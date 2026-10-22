@@ -138,9 +138,9 @@ let header = FlexView(insets: .layoutMargins) {
 ```
 
 - **Containers**: `Row`, `Column`, `Flex(direction:wrap:)`, `Grid`, plus `Spacer`. There is no `ZStack`; make a child overlap with `.absolute(inset:)`.
-- **Leaves**: any `UIView` you own can be placed in the builder directly. A few thin wrappers (`Label("text")`, …) create the view for you.
+- **Leaves**: any `UIView` you own can be placed in the builder directly, or let the host create the view for you with `Label`, `Image`, `Box` or `Managed` (see below).
 - **Modifiers** (`.width`, `.height`, `.size`, `.grow`, `.shrink`, `.basis`, `.margin`, `.padding`, `.absolute(inset:)`, `.gridColumn(_:span:)`, `.hidden()`, `.styled { }`, …) all edit one value type, `Style`, which mirrors `ZDTaffy.Style`. `.styled { $0.… }` edits the full `LayoutStyle`, and `.custom { $0.… }` reaches the underlying `ZDTaffy.Style`, so nothing Taffy can do is out of reach.
-- **Values**: numbers are points (`.width(100)`); percentages are `.percent(50)` or `50.percent`. There is deliberately no `50%` operator. Public API uses `CGFloat`; the conversion to Taffy's `Float` is internal.
+- **Values**: numbers are points (`.width(100)`); a `CGFloat` variable works too (`.height(1 / scale)`); percentages are `.percent(50)` or `50.percent`. There is deliberately no `50%` operator. Public API uses `CGFloat`; the conversion to Taffy's `Float` is internal.
 
 ```swift
 Grid(columns: [.fixed(80), .fr(1), .fr(2)], rows: [.auto], gap: 8) {
@@ -178,9 +178,9 @@ Consequences:
 | Concern | Behaviour | Why / what to know |
 |---|---|---|
 | **Hidden views** | A view with `isHidden == true` is treated as `display: none` and takes no space (the old library's `gone`). The flag is read at the start of every pass. | Matches the common intent. Toggling `isHidden` does not itself trigger layout in UIKit, so call `setNeedsLayout()` afterwards. To hide but *keep* the space, use `alpha = 0` instead. |
-| **Right-to-left** | Direction follows `effectiveUserInterfaceLayoutDirection` of the container, so `leading` / `trailing` insets and `Row` order flip automatically. | Insets are logical only (`leading` / `trailing`); there is no physical `left` / `right`. Use `.custom` if you really need one. |
-| **Pixel alignment** | Taffy's own integer rounding is **off**. Frames are snapped to the screen's `scale` by the framework (0.5pt steps on 2x, 0.333pt on 3x). | Taffy rounds to whole points, which makes 2x/3x screens blurry or gappy. Snapping happens once on the final result, so accumulated rounding error does not leak into siblings. |
-| **Safe area** | **Not** applied by default. Opt in on the top-level container: `FlexView(insets: .safeArea) { … }` or `.layoutMargins`. | Most containers are nested and must not add the inset twice. |
+| **Right-to-left** | The nearest view that forces a `semanticContentAttribute` (the container or an ancestor) decides, otherwise the system direction, so `leading` / `trailing` insets and `Row` order flip automatically. | Insets are logical only (`leading` / `trailing`); there is no physical `left` / `right`. Use `.custom` if you really need one. |
+| **Pixel alignment** | Taffy's own integer rounding is **off**. Frames are snapped to the screen's `scale` by the framework (0.5pt steps on 2x, 0.333pt on 3x). Boxes snap both edges, so neighbours stay flush; views with measured content snap their origin and round their size **up**. | Taffy rounds to whole points, which makes 2x/3x screens blurry or gappy. Snapping happens once on the final result, so rounding error does not accumulate. Rounding content up matters: a label snapped a third of a point narrower than its text truncates (`128` became `1…` in the demo). |
+| **Safe area** | **Not** applied by default. Opt in on the top-level container: `FlexView(insets: .safeArea) { … }` or `.layoutMargins`. | Most containers are nested and must not add the inset twice. A `FlexScrollView` already makes room for the safe area through `contentInsetAdjustmentBehavior`, so it ignores the safe area in `.layoutMargins` (otherwise the content starts a whole navigation bar too low). |
 
 ### Trade-off: items do not shrink by default
 
@@ -216,6 +216,22 @@ cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
 
 Height depends on width, but Auto Layout only asks for an intrinsic size. Like `UILabel`, `FlexView` reports the height for the width it has and, when that width changes, calls `invalidateIntrinsicContentSize()` once from `layoutSubviews`. This is verified on the simulator with both a `UICollectionView` list and a `UITableView` using `automaticDimension`.
 
+### Views the framework creates
+
+Besides your own `UIView`s, a few thin wrappers describe views that the host creates, caches and updates for you: `Label("text", font:color:lines:)`, `Image(image, tint:)`, `Box(color:cornerRadius:)`, and `Managed<V>(make:update:)` for any other type.
+
+```swift
+Managed<UISwitch>(id: "notifications", make: { UISwitch() }) { $0.isOn = isOn }
+```
+
+`body()` runs on every layout pass, so these are descriptions, not views: the view behind one is cached and reused, and `update` is applied to it each pass. A view's identity is its `id`, or else its position among the un-named descriptions of the same type. Giving views that carry state (animations, text fields) an `id` keeps them stable when an `if` adds or removes an earlier sibling. Cached views the description stops mentioning are removed. Use `Managed<UISwitch>(…)` explicitly when `make` is a multi-statement closure, because Swift cannot infer the type from it.
+
+`Label` wraps by default; give it `.shrink(1)` to make it wrap or truncate beside other views.
+
+### Virtual containers
+
+`Row`, `Column`, `Flex`, `Grid` and `Spacer` are layout nodes only: they never create a `UIView`, so the view hierarchy contains just the leaves, however deeply the description nests. This is what `UILayoutGuide` / ZDFlexLayoutKit's `ZDFlexLayoutDiv` are used for elsewhere.
+
 ### Other decisions
 
 | Topic | Decision | Alternative not taken, and why |
@@ -228,6 +244,16 @@ Height depends on width, but Auto Layout only asks for an intrinsic size. Like `
 | Cells | Rely on UIKit self-sizing. `FlexContentConfiguration { … }` (a `UIContentConfiguration`) lets table / collection cells use the DSL directly. | A template-cell height helper is obsolete once self-sizing and `UIContentConfiguration` exist. |
 | Old API | No compatibility layer with ZDFlexLayoutKit. | Carrying the old API would constrain the new design. Behaviours (virtual containers, auto-refresh, cell sizing) are kept as concepts only. |
 | Objective-C | Not supported. | Result builders and generics have no ObjC equivalent. |
+
+### Demo
+
+`Demo/` is a small app (profile, grid gallery, self-sizing feed, settings form) that exercises the framework on a real screen. Generate the project with [XcodeGen](https://github.com/yonaskolb/XcodeGen) and run it:
+
+```bash
+cd Demo && xcodegen generate && open ZDLayoutDemo.xcodeproj
+```
+
+Launch arguments `-tab 0…3` and `-rtl YES` pick a screen and right-to-left layout, which is handy for screenshots.
 
 ### Debugging and tests
 

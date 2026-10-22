@@ -17,6 +17,7 @@ public enum FlexInsets: Hashable, Sendable {
 @MainActor
 final class FlexEngine {
     private var managed: [ObjectIdentifier: UIView] = [:]
+    private var created: [CreatedKey: UIView] = [:]
     private(set) var lastRoot: LayoutNode?
     private(set) var lastResult: ResolvedLayout?
 
@@ -24,14 +25,68 @@ final class FlexEngine {
 
     func environment(for host: UIView) -> LayoutEnvironment {
         let scale = host.window?.screen.scale ?? host.traitCollection.displayScale
-        return LayoutEnvironment(
-            direction: host.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .rightToLeft : .leftToRight,
-            scale: scale > 0 ? scale : 1
-        )
+        return LayoutEnvironment(direction: direction(of: host), scale: scale > 0 ? scale : 1)
+    }
+
+    /// The nearest view that forces a direction (the host itself, or an ancestor) decides. `UIView` does not pass
+    /// a forced `semanticContentAttribute` down to views created later, such as cells, so walk up to find it;
+    /// with none, the system's own resolution applies.
+    private func direction(of host: UIView) -> LayoutDirection {
+        var view: UIView? = host
+        while let current = view {
+            switch current.semanticContentAttribute {
+            case .forceLeftToRight: return .leftToRight
+            case .forceRightToLeft: return .rightToLeft
+            default: view = current.superview
+            }
+        }
+        return host.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .rightToLeft : .leftToRight
+    }
+
+    private struct CreatedKey: Hashable {
+        let identity: AnyHashable
+        let type: ObjectIdentifier
+    }
+
+    /// Replaces descriptions of framework-created views with the views themselves, reusing cached ones.
+    /// `pruneUnused` drops cached views the description no longer mentions (only a real layout pass may do that).
+    private func resolveCreatedViews(in children: [LayoutNode], pruneUnused: Bool) -> [LayoutNode] {
+        var positions: [ObjectIdentifier: Int] = [:]
+        var used = Set<CreatedKey>()
+
+        let resolved = children.map { child in
+            child.mapped { node in
+                guard let spec = node.content as? ManagedViewSpec else { return }
+                let identity: AnyHashable
+                if let id = spec.id {
+                    identity = AnyHashable(NamedIdentity(id: id))
+                } else {
+                    let position = positions[spec.typeID, default: 0]
+                    positions[spec.typeID] = position + 1
+                    identity = AnyHashable(position)
+                }
+                let key = CreatedKey(identity: identity, type: spec.typeID)
+                let view = created[key] ?? spec.make()
+                created[key] = view
+                used.insert(key)
+                spec.update(view)
+
+                // Keep the style the modifiers set; take measuring and the view from a regular view leaf.
+                let leaf = view.layoutNode
+                node = LayoutNode(style: node.style, children: [], measure: leaf.measure, content: view)
+            }
+        }
+        if pruneUnused { created = created.filter { used.contains($0.key) } }
+        return resolved
+    }
+
+    private struct NamedIdentity: Hashable {
+        let id: AnyHashable
     }
 
     /// The implicit root: a column that stretches its children and pads them by `insets`.
-    func makeRoot(children: [LayoutNode], insets: FlexInsets, host: UIView, environment: LayoutEnvironment) -> LayoutNode {
+    func makeRoot(children: [LayoutNode], insets: FlexInsets, host: UIView, environment: LayoutEnvironment, pruneUnused: Bool = false) -> LayoutNode {
+        let children = resolveCreatedViews(in: children, pruneUnused: pruneUnused)
         var style = LayoutStyle()
         style.axis = .column
         style.padding = Self.edges(for: insets, host: host, direction: environment.direction)
@@ -80,7 +135,7 @@ final class FlexEngine {
     @discardableResult
     func layout(children: [LayoutNode], insets: FlexInsets, host: UIView, origin: CGPoint, proposed: ProposedSize) -> CGSize {
         let environment = environment(for: host)
-        let root = makeRoot(children: children, insets: insets, host: host, environment: environment)
+        let root = makeRoot(children: children, insets: insets, host: host, environment: environment, pruneUnused: true)
         guard let result = try? LayoutSolver.solve(root, in: proposed, sizing: .fill, environment: environment) else {
             assertionFailure("ZDLayout: layout failed")
             return host.bounds.size

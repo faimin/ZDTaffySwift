@@ -91,6 +91,16 @@ open class FlexView: UIView, LayoutMeasurable {
         if insets == .safeArea { setNeedsLayout() }
     }
 
+    // A different text size changes every label's measure without any of them telling us.
+    @available(iOS, deprecated: 17.0)
+    open override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.preferredContentSizeCategory != previousTraitCollection?.preferredContentSizeCategory {
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+        }
+    }
+
     open override func layoutMarginsDidChange() {
         super.layoutMarginsDidChange()
         if insets == .layoutMargins { setNeedsLayout() }

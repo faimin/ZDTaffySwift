@@ -119,6 +119,19 @@ struct FlexViewTests {
         #expect(b.frame.maxX == 150)
     }
 
+    @Test func directionIsInheritedFromAnAncestor() {
+        let a = fixed(0, 0)
+        let view = FlexView { Row { a.size(30, 10) } }
+        let parent = UIView(frame: CGRect(x: 0, y: 0, width: 200, height: 20))
+        parent.semanticContentAttribute = .forceRightToLeft
+        parent.addSubview(view)
+        layout(view, width: 200, height: 20)
+
+        // `view` itself is `.unspecified`; the forced direction reaches it through the trait collection.
+        #expect(view.semanticContentAttribute == .unspecified)
+        #expect(a.frame.maxX == 200)
+    }
+
     @Test func layoutMarginsInsetTheContent() {
         let a = fixed(0, 0)
         let view = FlexView(insets: .layoutMargins) { a.size(10, 10) }
@@ -445,6 +458,156 @@ struct TableCellTests {
 
         #expect(abs(table.rectForRow(at: IndexPath(row: 0, section: 0)).height - (singleLine + 24)) < 1)
         #expect(abs(table.rectForRow(at: IndexPath(row: 1, section: 0)).height - (wrapped + 24)) < 1)
+    }
+}
+
+@MainActor
+@Suite("Managed views")
+struct ManagedViewTests {
+    private func labels(in view: UIView) -> [UILabel] { view.subviews.compactMap { $0 as? UILabel } }
+
+    @Test func labelsAreCreatedMountedAndSized() {
+        let view = FlexView {
+            Column(gap: 4) {
+                Label("One", lines: 1)
+                Label("Two", lines: 1)
+            }
+        }
+        layout(view, width: 200, height: 100)
+
+        let all = labels(in: view)
+        #expect(all.map(\.text) == ["One", "Two"])
+        #expect(all[0].frame.width == 200)
+        #expect(abs(all[1].frame.minY - (all[0].frame.maxY + 4)) < 1e-6)
+    }
+
+    @Test func viewsAreReusedAcrossPasses() {
+        let view = FlexView { Label("Same") }
+        layout(view, width: 100, height: 50)
+        let first = labels(in: view)[0]
+
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        #expect(labels(in: view).count == 1)
+        #expect(labels(in: view)[0] === first)
+    }
+
+    @Test func contentIsUpdatedInPlace() {
+        nonisolated(unsafe) var text = "Before"
+        let view = FlexView { Label(text) }
+        layout(view, width: 100, height: 50)
+        let label = labels(in: view)[0]
+
+        text = "After"
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        #expect(labels(in: view)[0] === label)
+        #expect(label.text == "After")
+    }
+
+    @Test func removedDescriptionsRemoveTheirViews() {
+        nonisolated(unsafe) var count = 3
+        let view = FlexView {
+            Column { for index in 0..<count { Label("Row \(index)") } }
+        }
+        layout(view, width: 100, height: 100)
+        #expect(labels(in: view).count == 3)
+
+        count = 1
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        #expect(labels(in: view).map(\.text) == ["Row 0"])
+    }
+
+    @Test func explicitIdsSurviveReordering() {
+        nonisolated(unsafe) var showsBanner = true
+        let view = FlexView {
+            Column {
+                if showsBanner { Label("Banner") }
+                Label("Body", id: "body")
+            }
+        }
+        layout(view, width: 100, height: 100)
+        let body = labels(in: view).first { $0.text == "Body" }
+
+        showsBanner = false
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        #expect(labels(in: view).first { $0.text == "Body" } === body)
+        #expect(labels(in: view).count == 1)
+    }
+
+    @Test func measuringDoesNotDropCachedViews() {
+        let view = FlexView { Label("Keep me", id: "keep") }
+        layout(view, width: 100, height: 50)
+        let label = labels(in: view)[0]
+
+        _ = view.sizeThatFits(CGSize(width: 100, height: 100))
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        #expect(labels(in: view)[0] === label)
+    }
+
+    @Test func wrappingLabelsNeedShrinkToStayInsideARow() {
+        let text = "The quick brown fox jumps over the lazy dog"
+        let wrapping = FlexView {
+            Row(gap: 8) { Box(color: .red).size(40); Label(text).shrink(1) }
+        }
+        layout(wrapping, width: 200, height: 300)
+        let label = labels(in: wrapping)[0]
+        #expect(label.frame.maxX <= 200)
+        #expect(label.frame.height > label.font.lineHeight * 1.5)
+
+        let rigid = FlexView {
+            Row(gap: 8) { Box(color: .red).size(40); Label(text, lines: 1) }
+        }
+        layout(rigid, width: 200, height: 300)
+        #expect(labels(in: rigid)[0].frame.maxX > 200)
+    }
+
+    @Test func imagesAndBoxesTakeTheirConfiguration() {
+        let image = UIImage(systemName: "star")
+        let view = FlexView {
+            Row(alignItems: .center) {
+                Image(image, tint: .orange)
+                Box(color: .blue, cornerRadius: 6).size(20)
+            }
+        }
+        layout(view, width: 200, height: 50)
+
+        let imageView = view.subviews.compactMap { $0 as? UIImageView }.first
+        #expect(imageView?.image === image)
+        #expect(imageView?.tintColor == .orange)
+        // Sizes are snapped to the device pixel grid, so allow one pixel (a third of a point on a 3x screen).
+        if let size = imageView?.frame.size, let natural = image?.size {
+            #expect(abs(size.width - natural.width) < 0.5 && abs(size.height - natural.height) < 0.5)
+        }
+
+        let box = view.subviews.first { !($0 is UIImageView) }
+        #expect(box?.backgroundColor == .blue)
+        #expect(box?.layer.cornerRadius == 6)
+        #expect(box?.frame.size == CGSize(width: 20, height: 20))
+    }
+
+    @Test func managedGivesAnyViewTypeAManagedLifecycle() {
+        nonisolated(unsafe) var isOn = false
+        let view = FlexView {
+            Row { Managed(make: { UISwitch() }) { $0.isOn = isOn } }
+        }
+        layout(view, width: 100, height: 50)
+        let toggle = view.subviews.compactMap { $0 as? UISwitch }.first
+        #expect(toggle?.isOn == false)
+
+        isOn = true
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        #expect(view.subviews.compactMap { $0 as? UISwitch }.first === toggle)
+        #expect(toggle?.isOn == true)
     }
 }
 #endif
