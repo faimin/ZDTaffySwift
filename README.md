@@ -80,9 +80,11 @@ swift test
 | `Tests/ZDTaffyTests/` | Swift Testing suites |
 | `scripts/` | XCFramework build script |
 
-## ZDLayout (design, not implemented yet)
+## ZDLayout (in progress)
 
-`ZDLayout` is a planned declarative layout framework for UIKit built on top of `ZDTaffy`. This section records the agreed design and the trade-offs behind it. **The API below is a sketch and may change during implementation.**
+`ZDLayout` is a declarative layout framework for UIKit built on top of `ZDTaffy`. This section records the agreed design and the trade-offs behind it.
+
+**Status:** `ZDLayoutCore` (node tree, containers, modifiers, solver, pixel snapping) is implemented and tested. The UIKit layer (`ZDLayout`: `FlexView`, `FlexScrollView`, `UIView` leaves, cells) is still design only, so the UIKit-facing snippets below are a sketch and may change.
 
 ### Goals
 
@@ -131,7 +133,7 @@ final class ProfileHeader: FlexView {
 
 - **Containers**: `Row`, `Column`, `Flex(direction:wrap:)`, `Grid`, plus `Spacer`. There is no `ZStack`; make a child overlap with `.absolute(inset:)`.
 - **Leaves**: any `UIView` you own can be placed in the builder directly. A few thin wrappers (`Label("text")`, …) create the view for you.
-- **Modifiers** (`.width`, `.height`, `.size`, `.grow`, `.shrink`, `.basis`, `.margin`, `.padding`, `.absolute(inset:)`, `.gridColumn(_:span:)`, `.style { }`, …) all edit one value type, `Style`, which mirrors `ZDTaffy.Style`. `.style { $0.… }` reaches anything the modifiers do not cover.
+- **Modifiers** (`.width`, `.height`, `.size`, `.grow`, `.shrink`, `.basis`, `.margin`, `.padding`, `.absolute(inset:)`, `.gridColumn(_:span:)`, `.hidden()`, `.styled { }`, …) all edit one value type, `Style`, which mirrors `ZDTaffy.Style`. `.styled { $0.… }` edits the full `LayoutStyle`, and `.custom { $0.… }` reaches the underlying `ZDTaffy.Style`, so nothing Taffy can do is out of reach.
 - **Values**: numbers are points (`.width(100)`); percentages are `.percent(50)` or `50.percent`. There is deliberately no `50%` operator. Public API uses `CGFloat`; the conversion to Taffy's `Float` is internal.
 
 ```swift
@@ -141,7 +143,7 @@ Grid(columns: [.fixed(80), .fr(1), .fr(2)], rows: [.auto], gap: 8) {
 }
 ```
 
-Grid exposes tracks (`.fixed`, `.fr`, `.auto`, `.minmax`, `.repeat`), `gap`, `autoFlow` and item placement by line / span. Named areas and named lines are not part of the DSL; use `.style { $0.gridTemplateAreas = … }`.
+Grid exposes tracks (`.fixed`, `.fr`, `.auto`, `.minmax`, `.repeat`), `gap`, `autoFlow` and item placement by line / span. Named areas and named lines are not part of the DSL; use `.custom { $0.gridTemplateAreas = … }`.
 
 ### How layout is triggered (and what you must do)
 
@@ -170,7 +172,7 @@ Consequences:
 | Concern | Behaviour | Why / what to know |
 |---|---|---|
 | **Hidden views** | A view with `isHidden == true` is treated as `display: none` and takes no space (the old library's `gone`). The flag is read at the start of every pass. | Matches the common intent. Toggling `isHidden` does not itself trigger layout in UIKit, so call `setNeedsLayout()` afterwards. To hide but *keep* the space, use `alpha = 0` instead. |
-| **Right-to-left** | Direction follows `effectiveUserInterfaceLayoutDirection` of the container, so `leading` / `trailing` insets and `Row` order flip automatically. | Use `.leading` / `.trailing` rather than `.left` / `.right` unless you really mean physical sides. |
+| **Right-to-left** | Direction follows `effectiveUserInterfaceLayoutDirection` of the container, so `leading` / `trailing` insets and `Row` order flip automatically. | Insets are logical only (`leading` / `trailing`); there is no physical `left` / `right`. Use `.custom` if you really need one. |
 | **Pixel alignment** | Taffy's own integer rounding is **off**. Frames are snapped to the screen's `scale` by the framework (0.5pt steps on 2x, 0.333pt on 3x). | Taffy rounds to whole points, which makes 2x/3x screens blurry or gappy. Snapping happens once on the final result, so accumulated rounding error does not leak into siblings. |
 | **Safe area** | **Not** applied by default. Opt in on the top-level container: `FlexView(insets: .safeArea) { … }` or `.layoutMargins`. | Most containers are nested and must not add the inset twice. |
 

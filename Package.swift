@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "ZDTaffy", targets: ["ZDTaffy"]),
+        .library(name: "ZDLayoutCore", targets: ["ZDLayoutCore"]),
     ],
     targets: [
         // Produced by scripts/build-xcframework.sh.
@@ -25,6 +26,16 @@ let package = Package(
             path: "Sources/ZDTaffy",
             // BoltFFI's generated code keeps its callback vtables in global `var`s, which Swift 6 rejects.
             swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // Platform-agnostic layout model and solver; deliberately free of UIKit.
+        .target(
+            name: "ZDLayoutCore",
+            dependencies: ["ZDTaffy"],
+            path: "Sources/ZDLayoutCore"
+        ),
+        .testTarget(
+            name: "ZDLayoutCoreTests",
+            dependencies: ["ZDLayoutCore"]
         ),
         .testTarget(
             name: "ZDTaffyTests",

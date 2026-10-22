@@ -80,9 +80,11 @@ swift test
 | `Tests/ZDTaffyTests/` | Swift Testing 测试 |
 | `scripts/` | XCFramework 构建脚本 |
 
-## ZDLayout(设计中,尚未实现)
+## ZDLayout(开发中)
 
-`ZDLayout` 是计划在 `ZDTaffy` 之上构建的 UIKit 声明式布局框架。本节记录已经确认的设计和取舍。**下面的 API 只是草案,实现过程中可能调整。**
+`ZDLayout` 是在 `ZDTaffy` 之上构建的 UIKit 声明式布局框架。本节记录已经确认的设计和取舍。
+
+**进度:** `ZDLayoutCore`(节点树、容器、修饰符、求解器、像素对齐)已实现并通过测试。UIKit 层(`ZDLayout`:`FlexView`、`FlexScrollView`、`UIView` 叶子、cell)仍处于设计阶段,下面面向 UIKit 的代码只是草案,可能调整。
 
 ### 目标
 
@@ -131,7 +133,7 @@ final class ProfileHeader: FlexView {
 
 - **容器**:`Row`、`Column`、`Flex(direction:wrap:)`、`Grid`,以及 `Spacer`。没有 `ZStack`;需要重叠时给子项加 `.absolute(inset:)`。
 - **叶子**:任何你自己持有的 `UIView` 都可以直接放进 builder。少量薄封装(`Label("text")` 等)会替你创建视图。
-- **修饰符**(`.width`、`.height`、`.size`、`.grow`、`.shrink`、`.basis`、`.margin`、`.padding`、`.absolute(inset:)`、`.gridColumn(_:span:)`、`.style { }` 等)修改的都是同一个值类型 `Style`,它对应 `ZDTaffy.Style`。修饰符没覆盖的属性用 `.style { $0.… }` 设置。
+- **修饰符**(`.width`、`.height`、`.size`、`.grow`、`.shrink`、`.basis`、`.margin`、`.padding`、`.absolute(inset:)`、`.gridColumn(_:span:)`、`.hidden()`、`.styled { }` 等)修改的都是同一个值类型 `Style`,它对应 `ZDTaffy.Style`。`.styled { $0.… }` 修改完整的 `LayoutStyle`,`.custom { $0.… }` 则直接访问底层的 `ZDTaffy.Style`,所以 Taffy 能做的事都能做到。
 - **值**:数字就是 point(`.width(100)`);百分比写 `.percent(50)` 或 `50.percent`,有意不提供 `50%` 运算符。公开 API 统一用 `CGFloat`,转成 Taffy 的 `Float` 在内部完成。
 
 ```swift
@@ -141,7 +143,7 @@ Grid(columns: [.fixed(80), .fr(1), .fr(2)], rows: [.auto], gap: 8) {
 }
 ```
 
-Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、`autoFlow`,以及按线 / 跨度放置子项。命名区域和命名线不在 DSL 里,用 `.style { $0.gridTemplateAreas = … }` 设置。
+Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、`autoFlow`,以及按线 / 跨度放置子项。命名区域和命名线不在 DSL 里,用 `.custom { $0.gridTemplateAreas = … }` 设置。
 
 ### 布局如何触发(你需要做什么)
 
@@ -170,7 +172,7 @@ Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、
 | 方面 | 行为 | 原因 / 需要知道的 |
 |---|---|---|
 | **隐藏视图** | `isHidden == true` 的视图被当作 `display: none`,不占空间(相当于旧库的 `gone`)。每次布局开始时读取。 | 符合最常见的意图。UIKit 里切换 `isHidden` 本身不会触发布局,切换后要调用 `setNeedsLayout()`。想隐藏但保留占位,用 `alpha = 0`。 |
-| **从右到左** | 方向跟随容器的 `effectiveUserInterfaceLayoutDirection`,`leading` / `trailing` 内边距和 `Row` 的顺序自动翻转。 | 除非你真的指物理方向,否则用 `.leading` / `.trailing` 而不是 `.left` / `.right`。 |
+| **从右到左** | 方向跟随容器的 `effectiveUserInterfaceLayoutDirection`,`leading` / `trailing` 内边距和 `Row` 的顺序自动翻转。 | 边距只有逻辑方向(`leading` / `trailing`),没有物理的 `left` / `right`;确实需要时用 `.custom`。 |
 | **像素对齐** | 关闭 Taffy 自带的整数取整,由框架按屏幕 `scale` 对齐(2x 屏 0.5pt 步长,3x 屏 0.333pt)。 | Taffy 取整到整数 point,在 2x / 3x 屏上会模糊或出现缝隙。对齐只在最终结果上做一次,舍入误差不会累积到兄弟节点。 |
 | **安全区** | 默认**不**考虑。在顶层容器上显式开启:`FlexView(insets: .safeArea) { … }` 或 `.layoutMargins`。 | 大多数容器是嵌套的,不能重复加内边距。 |
 
