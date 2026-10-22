@@ -80,7 +80,7 @@ open class FlexView: UIView, LayoutMeasurable {
             widthUsedForIntrinsicSize = bounds.width
             invalidateIntrinsicContentSize()
         }
-        engine.layout(children: body(), insets: insets, host: self, proposed: ProposedSize(bounds.size))
+        engine.layout(children: body(), insets: insets, host: self, origin: bounds.origin, proposed: ProposedSize(bounds.size))
         #if DEBUG
         engine.updateOverlay(in: self, isVisible: showsLayoutDebugOverlay)
         #endif

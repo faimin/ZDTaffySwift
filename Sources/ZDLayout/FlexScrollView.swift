@@ -51,7 +51,7 @@ open class FlexScrollView: UIScrollView, LayoutMeasurable {
 
     open override func layoutSubviews() {
         super.layoutSubviews()
-        let size = engine.layout(children: body(), insets: insets, host: self, proposed: scrollingProposal(for: bounds.size))
+        let size = engine.layout(children: body(), insets: insets, host: self, origin: .zero, proposed: scrollingProposal(for: bounds.size))
         if contentSize != size { contentSize = size }
     }
 

@@ -148,6 +148,55 @@ struct FlexViewTests {
         #expect(header.title.frame.maxX == 200)
     }
 
+    @Test func gridContainersLayOutUIViews() {
+        let a = fixed(0, 0), b = fixed(0, 0)
+        let view = FlexView {
+            Grid(columns: [.fr(1), .fr(3)], rows: [.fixed(30)], gap: 0) {
+                a
+                b
+            }
+        }
+        layout(view, width: 200, height: 100)
+
+        #expect(a.frame == CGRect(x: 0, y: 0, width: 50, height: 30))
+        #expect(b.frame == CGRect(x: 50, y: 0, width: 150, height: 30))
+    }
+
+    @Test func framesLandOnDevicePixels() {
+        let views = (0..<3).map { _ in fixed(0, 0) }
+        let view = FlexView {
+            Row { for v in views { v.grow(1).height(10) } }
+        }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.addSubview(view)
+        layout(view, width: 100, height: 10)
+
+        // Edges are multiples of 1/scale up to floating point error (33.333…×3 is 99.99999999999999).
+        let scale = window.screen.scale
+        func isOnPixel(_ value: CGFloat) -> Bool { abs(value * scale - (value * scale).rounded()) < 1e-6 }
+        for child in views {
+            #expect(isOnPixel(child.frame.minX))
+            #expect(isOnPixel(child.frame.maxX))
+        }
+        #expect(abs(views[2].frame.maxX - 100) < 1e-6)
+    }
+
+    #if DEBUG
+    @Test func debugOverlayIsAddedAndRemoved() {
+        let view = FlexView { fixed(0, 0).size(10, 10) }
+        layout(view, width: 50, height: 50)
+        #expect(view.layer.sublayers?.contains { $0 is CAShapeLayer } != true)
+
+        view.showsLayoutDebugOverlay = true
+        view.layoutIfNeeded()
+        #expect(view.layer.sublayers?.contains { $0 is CAShapeLayer } == true)
+
+        view.showsLayoutDebugOverlay = false
+        view.layoutIfNeeded()
+        #expect(view.layer.sublayers?.contains { $0 is CAShapeLayer } != true)
+    }
+    #endif
+
     @Test func debugDescriptionListsTheTree() {
         let a = fixed(0, 0)
         let view = FlexView { Row { a.size(10, 10) } }
@@ -273,6 +322,23 @@ struct FlexScrollViewTests {
         #expect(scroll.contentSize.height == 300)
     }
 
+    @Test func scrollingDoesNotMoveContentInItsOwnCoordinates() {
+        let views = (0..<5).map { _ in fixed(0, 0) }
+        let scroll = FlexScrollView {
+            Column { for v in views { v.height(100) } }
+        }
+        layout(scroll, width: 200, height: 200)
+
+        scroll.contentOffset = CGPoint(x: 0, y: 150)
+        scroll.setNeedsLayout()
+        scroll.layoutIfNeeded()
+
+        // Subview frames live in content coordinates, which do not shift with the offset.
+        #expect(views[0].frame == CGRect(x: 0, y: 0, width: 200, height: 100))
+        #expect(views[3].frame.minY == 300)
+        #expect(scroll.contentSize.height == 500)
+    }
+
     @Test func horizontalAxisScrollsSideways() {
         let views = (0..<4).map { _ in fixed(0, 0) }
         let scroll = FlexScrollView(axis: .horizontal) {
@@ -339,6 +405,46 @@ struct CellTests {
         #expect(abs(short.frame.height - (singleLine + padding)) < 1)
         #expect(abs(tall.frame.height - (wrapped + padding)) < 1)
         #expect(tall.frame.width == 320)
+    }
+}
+
+@MainActor
+@Suite("Table cells")
+struct TableCellTests {
+    @Test func tableViewCellsSelfSizeFromTheDSL() async throws {
+        let long = "The quick brown fox jumps over the lazy dog. " + String(repeating: "More words. ", count: 12)
+        let table = UITableView(frame: CGRect(x: 0, y: 0, width: 320, height: 600), style: .plain)
+        table.rowHeight = UITableView.automaticDimension
+        table.estimatedRowHeight = 44
+        table.separatorStyle = .none
+        table.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+
+        let source = UITableViewDiffableDataSource<Int, String>(tableView: table) { table, indexPath, text in
+            let cell = table.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+            let title = label(text, lines: 0)
+            cell.contentConfiguration = FlexContentConfiguration {
+                Row(alignItems: .start) { title.grow(1).shrink(1) }.padding(12)
+            }
+            return cell
+        }
+        let window = UIWindow(frame: table.frame)
+        window.addSubview(table)
+        window.isHidden = false
+
+        var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
+        snapshot.appendSections([0])
+        snapshot.appendItems(["Short", long])
+        await source.apply(snapshot, animatingDifferences: false)
+        for _ in 0..<5 {
+            table.layoutIfNeeded()
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+
+        let singleLine = label("Short").sizeThatFits(CGSize(width: 296, height: CGFloat.greatestFiniteMagnitude)).height
+        let wrapped = label(long, lines: 0).sizeThatFits(CGSize(width: 296, height: CGFloat.greatestFiniteMagnitude)).height
+
+        #expect(abs(table.rectForRow(at: IndexPath(row: 0, section: 0)).height - (singleLine + 24)) < 1)
+        #expect(abs(table.rectForRow(at: IndexPath(row: 1, section: 0)).height - (wrapped + 24)) < 1)
     }
 }
 #endif

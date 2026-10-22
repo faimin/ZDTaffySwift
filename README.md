@@ -84,7 +84,7 @@ swift test
 
 `ZDLayout` is a declarative layout framework for UIKit built on top of `ZDTaffy`. This section records the agreed design and the trade-offs behind it.
 
-**Status:** implemented and tested. `ZDLayoutCore` runs on macOS (`swift test`); `ZDLayout` (`FlexView`, `FlexScrollView`, `UIView` leaves, `FlexContentConfiguration`) is tested on the iOS Simulator, including self-sizing collection view cells. Not done yet: a debug overlay is available in `DEBUG` builds, but there is no AppKit / SwiftUI adapter and no `UITableView`-specific helper.
+**Status:** implemented and tested. `ZDLayoutCore` runs on macOS (`swift test`); `ZDLayout` (`FlexView`, `FlexScrollView`, `UIView` leaves, `FlexContentConfiguration`) is tested on the iOS Simulator, including self-sizing collection view cells. Not done yet: AppKit / SwiftUI adapters. (The debug overlay exists in `DEBUG` builds.)
 
 ### Goals
 
@@ -214,7 +214,7 @@ cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
 }
 ```
 
-Height depends on width, but Auto Layout only asks for an intrinsic size. Like `UILabel`, `FlexView` reports the height for the width it has and, when that width changes, calls `invalidateIntrinsicContentSize()` once from `layoutSubviews`. This is verified with a `UICollectionView` list on the simulator. For `UITableView` the same mechanism applies but is not covered by a test yet.
+Height depends on width, but Auto Layout only asks for an intrinsic size. Like `UILabel`, `FlexView` reports the height for the width it has and, when that width changes, calls `invalidateIntrinsicContentSize()` once from `layoutSubviews`. This is verified on the simulator with both a `UICollectionView` list and a `UITableView` using `automaticDimension`.
 
 ### Other decisions
 

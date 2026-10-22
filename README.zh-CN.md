@@ -84,7 +84,7 @@ swift test
 
 `ZDLayout` 是在 `ZDTaffy` 之上构建的 UIKit 声明式布局框架。本节记录已经确认的设计和取舍。
 
-**进度:** 已实现并通过测试。`ZDLayoutCore` 在 macOS 上用 `swift test` 运行;`ZDLayout`(`FlexView`、`FlexScrollView`、`UIView` 叶子、`FlexContentConfiguration`)在 iOS 模拟器上测试,包括 self-sizing 的 collection view cell。尚未完成:`DEBUG` 构建里有调试叠加层,但没有 AppKit / SwiftUI 适配,也没有专门针对 `UITableView` 的辅助。
+**进度:** 已实现并通过测试。`ZDLayoutCore` 在 macOS 上用 `swift test` 运行;`ZDLayout`(`FlexView`、`FlexScrollView`、`UIView` 叶子、`FlexContentConfiguration`)在 iOS 模拟器上测试,包括 self-sizing 的 collection view cell。尚未完成:AppKit / SwiftUI 适配。(`DEBUG` 构建里有调试叠加层。)
 
 ### 目标
 
@@ -214,7 +214,7 @@ cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
 }
 ```
 
-高度取决于宽度,但 Auto Layout 只会询问固有尺寸。和 `UILabel` 一样,`FlexView` 报告的是当前宽度下的高度,宽度变化时在 `layoutSubviews` 里调用一次 `invalidateIntrinsicContentSize()`。这一点已在模拟器上用 `UICollectionView` 列表验证。`UITableView` 走同一套机制,但还没有测试覆盖。
+高度取决于宽度,但 Auto Layout 只会询问固有尺寸。和 `UILabel` 一样,`FlexView` 报告的是当前宽度下的高度,宽度变化时在 `layoutSubviews` 里调用一次 `invalidateIntrinsicContentSize()`。这一点已在模拟器上用 `UICollectionView` 列表和使用 `automaticDimension` 的 `UITableView` 验证。
 
 ### 其他决策
 

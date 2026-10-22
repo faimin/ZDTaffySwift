@@ -72,9 +72,13 @@ final class FlexEngine {
 
     // MARK: Laying out
 
-    /// Mounts the views of `children` into `host` and positions them. Returns the size of the laid-out content.
+    /// Mounts the views of `children` into `host` and positions them, with the content's top-left corner at
+    /// `origin` in the host's coordinate space. Returns the size of the laid-out content.
+    ///
+    /// A plain view lays out into its visible area, so its origin is `bounds.origin`. A scroll view's content
+    /// starts at zero however far it has been scrolled.
     @discardableResult
-    func layout(children: [LayoutNode], insets: FlexInsets, host: UIView, proposed: ProposedSize) -> CGSize {
+    func layout(children: [LayoutNode], insets: FlexInsets, host: UIView, origin: CGPoint, proposed: ProposedSize) -> CGSize {
         let environment = environment(for: host)
         let root = makeRoot(children: children, insets: insets, host: host, environment: environment)
         guard let result = try? LayoutSolver.solve(root, in: proposed, sizing: .fill, environment: environment) else {
@@ -85,7 +89,6 @@ final class FlexEngine {
         let leaves = root.leaves
         mount(views: leaves.compactMap { $0.content as? UIView }, in: host)
 
-        let origin = host.bounds.origin
         for (node, resolved) in zip(leaves, result.leaves) {
             guard let view = node.content as? UIView, !view.isHidden else { continue }
             let frame = resolved.absoluteFrame.offsetBy(dx: origin.x, dy: origin.y)
@@ -167,7 +170,7 @@ final class FlexEngine {
         add(result)
         layer.path = path.cgPath
         layer.frame = host.bounds
-        layer.zPosition = .greatestFiniteMagnitude
+        layer.zPosition = 10_000
         if layer.superlayer !== host.layer { host.layer.addSublayer(layer) }
         overlay = layer
     }
