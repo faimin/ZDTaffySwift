@@ -30,6 +30,11 @@ extension Length: ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral {
     public init(floatLiteral value: Double) { self = .points(CGFloat(value)) }
 }
 
+extension Length {
+    /// Points from a `CGFloat` value, for the places that take a ``Length``: `Length(1 / scale)`.
+    public init(_ points: CGFloat) { self = .points(points) }
+}
+
 extension BinaryInteger {
     /// `50.percent` → `Length.percent(50)`.
     public var percent: Length { .percent(CGFloat(self)) }

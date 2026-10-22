@@ -52,6 +52,22 @@ struct FlexTests {
         #expect(result.children[0].absoluteFrame.minY == 40)
     }
 
+    @Test func cgFloatValuesAreAccepted() throws {
+        let side: CGFloat = 30
+        let gap: CGFloat = 6
+        let root = Row {
+            Leaf().size(side)
+            Leaf().width(side).height(side / 2)
+        }
+        .padding(horizontal: gap, vertical: gap)
+        .size(200, 100)
+
+        let result = try solve(root)
+
+        #expect(result.children[0].frame == CGRect(x: 6, y: 6, width: 30, height: 30))
+        #expect(result.children[1].frame.size == CGSize(width: 30, height: 15))
+    }
+
     @Test func percentAndLiteralPointsResolve() throws {
         let root = Row {
             Leaf().width(.percent(25)).height(10)
@@ -342,6 +358,33 @@ struct PixelSnappingTests {
             }
             #expect(result.children[2].absoluteFrame.maxX == 100)
         }
+    }
+
+    @Test func measuredLeavesAreNeverNarrowerThanTheirContent() throws {
+        // 32.333pt of text centred in a cell: snapping both edges would give 32.0 and truncate it.
+        let root = Column(alignItems: .center) {
+            Leaf { _ in CGSize(width: 32.0 + 1.0 / 3, height: 24.5) }
+        }
+        .size(115.4, 100)
+
+        for scale: CGFloat in [1, 2, 3] {
+            let frame = try solve(root, environment: LayoutEnvironment(scale: scale)).children[0].frame
+            #expect(frame.width >= 32.0 + 1.0 / 3 - 1e-6)
+            #expect(frame.height >= 24.5 - 1e-6)
+            #expect(frame.width < 32.0 + 1.0 / 3 + 1.0 / scale + 1e-6)
+        }
+    }
+
+    @Test func boxesStillSnapEdgesSoNeighboursStayFlush() throws {
+        let root = Row {
+            for _ in 0..<3 { Leaf().grow(1) }
+        }
+        .size(100, 10)
+
+        let edges = try solve(root, environment: LayoutEnvironment(scale: 3)).children.map(\.absoluteFrame)
+
+        #expect(edges[0].maxX == edges[1].minX)
+        #expect(edges[1].maxX == edges[2].minX)
     }
 
     @Test func relativeFramesAddUpToAbsoluteFrames() throws {

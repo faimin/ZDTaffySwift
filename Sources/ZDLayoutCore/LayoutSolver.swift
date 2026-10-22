@@ -94,6 +94,8 @@ public enum LayoutSolver {
     private struct Built {
         let id: NodeId
         let children: [Built]
+        /// Content-sized leaves must not end up narrower than the content that was measured for them.
+        let isMeasured: Bool
     }
 
     private static func build(
@@ -108,11 +110,11 @@ public enum LayoutSolver {
             if let measure = node.measure {
                 measurer.functions[id] = measure
             }
-            return Built(id: id, children: [])
+            return Built(id: id, children: [], isMeasured: node.measure != nil)
         }
         let children = try node.children.map { try build($0, in: tree, environment: environment, measurer: measurer) }
         let id = try tree.newWithChildren(style: style, children: children.map(\.id))
-        return Built(id: id, children: children)
+        return Built(id: id, children: children, isMeasured: false)
     }
 
     // MARK: Resolving
@@ -131,9 +133,10 @@ public enum LayoutSolver {
             width: CGFloat(layout.size.width),
             height: CGFloat(layout.size.height)
         )
-        // Snap absolute edges, not relative sizes: neighbouring nodes then share an exact edge and
-        // rounding error cannot accumulate down the tree.
-        let snapped = grid.snap(absolute)
+        // Boxes snap both edges: neighbours then share an exact edge and rounding error cannot accumulate down
+        // the tree. Content-sized leaves snap their origin and round the *size up*: a frame a fraction of a pixel
+        // narrower than the measured text makes a label truncate, or wrap onto a line nobody made room for.
+        let snapped = built.isMeasured ? grid.snapContent(absolute) : grid.snap(absolute)
         let children = try built.children.map {
             try resolve($0, in: tree, parentAbsolute: absolute.origin, parentSnappedOrigin: snapped.origin, grid: grid)
         }
@@ -160,6 +163,12 @@ struct PixelGrid {
 
     func snap(_ value: CGFloat) -> CGFloat {
         (value * scale).rounded() / scale
+    }
+
+    /// Rounds the size up to whole pixels, ignoring floating point noise, and the origin to the nearest pixel.
+    func snapContent(_ rect: CGRect) -> CGRect {
+        func up(_ value: CGFloat) -> CGFloat { ((value * scale) - 1e-3).rounded(.up) / scale }
+        return CGRect(x: snap(rect.minX), y: snap(rect.minY), width: up(rect.width), height: up(rect.height))
     }
 
     /// Snaps the left/top and right/bottom edges independently so adjacent rectangles stay flush.

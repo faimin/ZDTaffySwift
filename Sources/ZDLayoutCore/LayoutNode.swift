@@ -260,3 +260,25 @@ extension LayoutComponent {
         styled { $0.custom = change }
     }
 }
+
+// MARK: - CGFloat conveniences
+
+// Number literals already become a ``Length``. These let `CGFloat` variables (the usual UIKit currency) be passed
+// directly. They are disfavoured so that a literal such as `40` keeps resolving to the ``Length`` overloads.
+extension LayoutComponent {
+    @_disfavoredOverload public func width(_ points: CGFloat) -> LayoutNode { width(.points(points)) }
+    @_disfavoredOverload public func height(_ points: CGFloat) -> LayoutNode { height(.points(points)) }
+    @_disfavoredOverload public func size(_ width: CGFloat, _ height: CGFloat) -> LayoutNode {
+        size(.points(width), .points(height))
+    }
+    @_disfavoredOverload public func size(_ side: CGFloat) -> LayoutNode { size(.points(side)) }
+    @_disfavoredOverload public func basis(_ points: CGFloat) -> LayoutNode { basis(.points(points)) }
+    @_disfavoredOverload public func padding(_ all: CGFloat) -> LayoutNode { padding(.points(all)) }
+    @_disfavoredOverload public func padding(horizontal: CGFloat = 0, vertical: CGFloat = 0) -> LayoutNode {
+        padding(horizontal: .points(horizontal), vertical: .points(vertical))
+    }
+    @_disfavoredOverload public func margin(_ all: CGFloat) -> LayoutNode { margin(.points(all)) }
+    @_disfavoredOverload public func margin(horizontal: CGFloat = 0, vertical: CGFloat = 0) -> LayoutNode {
+        margin(horizontal: .points(horizontal), vertical: .points(vertical))
+    }
+}
