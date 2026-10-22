@@ -93,6 +93,22 @@ struct FlexTests {
         #expect(result.children[2].frame.origin == CGPoint(x: 0, y: 20))
     }
 
+    @Test func itemsDoNotShrinkUnlessAsked() throws {
+        let rigid = Row {
+            Leaf().size(80, 10)
+            Leaf().size(80, 10)
+        }
+        .size(100, 10)
+        let flexible = Row {
+            Leaf().size(80, 10).shrink(1)
+            Leaf().size(80, 10).shrink(1)
+        }
+        .size(100, 10)
+
+        #expect(try solve(rigid).children.map(\.frame.width) == [80, 80])
+        #expect(try solve(flexible).children.map(\.frame.width) == [50, 50])
+    }
+
     @Test func builderSupportsConditionalsAndLoops() throws {
         func make(showBadge: Bool, count: Int) -> LayoutNode {
             Row {

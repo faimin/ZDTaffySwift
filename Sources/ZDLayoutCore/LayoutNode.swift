@@ -33,16 +33,35 @@ public struct LayoutNode {
     public var style: LayoutStyle
     public var children: [LayoutNode]
     public var measure: LeafMeasure?
+    /// An object the caller associates with the node (a platform view, say). The solver never looks at it.
+    public var content: AnyObject?
 
-    public init(style: LayoutStyle = LayoutStyle(), children: [LayoutNode] = [], measure: LeafMeasure? = nil) {
+    public init(
+        style: LayoutStyle = LayoutStyle(),
+        children: [LayoutNode] = [],
+        measure: LeafMeasure? = nil,
+        content: AnyObject? = nil
+    ) {
         self.style = style
         self.children = children
         self.measure = measure
+        self.content = content
     }
 
-    /// Number of leaves in this subtree, in the order `ResolvedLayout.leaves` reports them.
-    public var leafCount: Int {
-        children.isEmpty ? 1 : children.reduce(0) { $0 + $1.leafCount }
+    /// The leaves of this subtree in depth-first order, matching `ResolvedLayout.leaves` element for element.
+    public var leaves: [LayoutNode] {
+        children.isEmpty ? [self] : children.flatMap(\.leaves)
+    }
+
+    /// Number of leaves in this subtree.
+    public var leafCount: Int { leaves.count }
+
+    /// Returns a copy with `change` applied to every node of the subtree, parents first.
+    public func mapped(_ change: (inout LayoutNode) -> Void) -> LayoutNode {
+        var node = self
+        change(&node)
+        node.children = node.children.map { $0.mapped(change) }
+        return node
     }
 }
 

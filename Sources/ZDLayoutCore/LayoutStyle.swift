@@ -40,7 +40,10 @@ public struct LayoutStyle {
     public var justifyContent: ContentDistribution?
     public var alignContent: ContentDistribution?
     public var grow: CGFloat = 0
-    public var shrink: CGFloat = 1
+    /// How much the node gives up when its siblings overflow the container. Defaults to `0` (as in Yoga and
+    /// SwiftUI) rather than CSS's `1`: a view you gave a size, or any content taller than its container, is not
+    /// squashed unless you ask with `.shrink(1)`.
+    public var shrink: CGFloat = 0
     public var basis: Length = .auto
     public var width: Length = .auto
     public var height: Length = .auto
