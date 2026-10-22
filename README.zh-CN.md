@@ -80,11 +80,11 @@ swift test
 | `Tests/ZDTaffyTests/` | Swift Testing 测试 |
 | `scripts/` | XCFramework 构建脚本 |
 
-## ZDLayout(开发中)
+## ZDLayout
 
 `ZDLayout` 是在 `ZDTaffy` 之上构建的 UIKit 声明式布局框架。本节记录已经确认的设计和取舍。
 
-**进度:** `ZDLayoutCore`(节点树、容器、修饰符、求解器、像素对齐)已实现并通过测试。UIKit 层(`ZDLayout`:`FlexView`、`FlexScrollView`、`UIView` 叶子、cell)仍处于设计阶段,下面面向 UIKit 的代码只是草案,可能调整。
+**进度:** 已实现并通过测试。`ZDLayoutCore` 在 macOS 上用 `swift test` 运行;`ZDLayout`(`FlexView`、`FlexScrollView`、`UIView` 叶子、`FlexContentConfiguration`)在 iOS 模拟器上测试,包括 self-sizing 的 collection view cell。尚未完成:`DEBUG` 构建里有调试叠加层,但没有 AppKit / SwiftUI 适配,也没有专门针对 `UITableView` 的辅助。
 
 ### 目标
 
@@ -112,22 +112,28 @@ final class ProfileHeader: FlexView {
     let name = UILabel()
     let badge = BadgeView()
 
-    init() {
-        super.init {
-            Row(gap: 12, alignItems: .center) {
-                avatar.width(40).height(40)
-                Column(gap: 4) {
-                    name
-                    Row {
-                        Spacer()
-                        badge
-                    }
+    // 每次布局都会重新求值,所以可以直接读取你的状态。
+    // Swift 不会把 result builder 带到重写的方法上:要重复写 `@LayoutBuilder`。
+    @LayoutBuilder override func body() -> [LayoutNode] {
+        Row(gap: 12, alignItems: .center) {
+            avatar.size(40)
+            Column(gap: 4) {
+                name.shrink(1)
+                Row {
+                    Spacer()
+                    badge
                 }
-                .grow(1)
             }
-            .padding(16)
+            .grow(1)
+            .shrink(1)
         }
+        .padding(16)
     }
+}
+
+// 或者不用子类:
+let header = FlexView(insets: .layoutMargins) {
+    Row(gap: 8) { icon.size(24); title.grow(1).shrink(1) }
 }
 ```
 
@@ -175,6 +181,40 @@ Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、
 | **从右到左** | 方向跟随容器的 `effectiveUserInterfaceLayoutDirection`,`leading` / `trailing` 内边距和 `Row` 的顺序自动翻转。 | 边距只有逻辑方向(`leading` / `trailing`),没有物理的 `left` / `right`;确实需要时用 `.custom`。 |
 | **像素对齐** | 关闭 Taffy 自带的整数取整,由框架按屏幕 `scale` 对齐(2x 屏 0.5pt 步长,3x 屏 0.333pt)。 | Taffy 取整到整数 point,在 2x / 3x 屏上会模糊或出现缝隙。对齐只在最终结果上做一次,舍入误差不会累积到兄弟节点。 |
 | **安全区** | 默认**不**考虑。在顶层容器上显式开启:`FlexView(insets: .safeArea) { … }` 或 `.layoutMargins`。 | 大多数容器是嵌套的,不能重复加内边距。 |
+
+### 取舍:子项默认不收缩
+
+CSS 给每个 flex 子项默认 `flex-shrink: 1`。ZDLayout 默认是 `0`,与 Yoga(旧库)和 SwiftUI 一致:
+
+| | 行为 | 代价 |
+|---|---|---|
+| **采用:`shrink` = 0** | 你设了 `size(40)` 的视图就是 40 宽。内容比容器高时溢出,而不是被压扁。 | 需要在其他视图旁边换行或截断的 label,要显式写 `.shrink(1)`。 |
+| CSS 默认:`shrink` = 1 | 容器不够大时子项让出空间。 | 每个固定尺寸的图标都要写 `.shrink(0)`;矮容器里的 column 会压扁它的行(开发过程中 self-sizing cell 就因此被压成了预估高度)。 |
+
+经验法则:在需要换行或截断的文本上写 `.shrink(1)`,同时在包着它的容器上也写。
+
+### UIKit 视图如何测量
+
+放进 builder 的 `UIView` 是叶子,内容尺寸依次来自:
+
+1. 如果视图遵循 `LayoutMeasurable`,用它的 `layoutSize(for:)`(`FlexView` 和 `FlexScrollView` 已遵循)。
+2. 引擎询问"最小可能尺寸"时,`UILabel` 的最小宽度:能换行就是最长单词的宽度,单行截断就是 0。这样长标题才会在图标旁边收缩,而不是死活不让。
+3. 类覆写了 `sizeThatFits(_:)` 时用它。宽度是提供的空间或布局已经确定的宽度;**高度永远不设限**:`UILabel` 会丢掉放不进有限高度的行,而"提供的高度"只是空间,不是裁剪。
+4. 否则用 `intrinsicContentSize`。(普通 `UIView` 的 `sizeThatFits` 返回自己当前的尺寸,会让布局结果反过来喂给自己。)
+
+直接 `UIView()` 没有自己的尺寸:要给它 `.size(…)`,或者让它遵循 `LayoutMeasurable`。
+
+### Cell 与 Auto Layout
+
+`FlexView` 报告 `intrinsicContentSize`(自然宽度,以及当前宽度下的高度)并实现 `systemLayoutSizeFitting`,所以能用在 Auto Layout 和 self-sizing cell 里。`FlexContentConfiguration` 就是基于它:
+
+```swift
+cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
+    Row(gap: 8, alignItems: .center) { icon.size(24); title.grow(1).shrink(1) }
+}
+```
+
+高度取决于宽度,但 Auto Layout 只会询问固有尺寸。和 `UILabel` 一样,`FlexView` 报告的是当前宽度下的高度,宽度变化时在 `layoutSubviews` 里调用一次 `invalidateIntrinsicContentSize()`。这一点已在模拟器上用 `UICollectionView` 列表验证。`UITableView` 走同一套机制,但还没有测试覆盖。
 
 ### 其他决策
 

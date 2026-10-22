@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "ZDTaffy", targets: ["ZDTaffy"]),
         .library(name: "ZDLayoutCore", targets: ["ZDLayoutCore"]),
+        .library(name: "ZDLayout", targets: ["ZDLayout"]),
     ],
     targets: [
         // Produced by scripts/build-xcframework.sh.
@@ -32,6 +33,16 @@ let package = Package(
             name: "ZDLayoutCore",
             dependencies: ["ZDTaffy"],
             path: "Sources/ZDLayoutCore"
+        ),
+        // UIKit container, DSL adapters and cell configuration. Empty on platforms without UIKit.
+        .target(
+            name: "ZDLayout",
+            dependencies: ["ZDLayoutCore"],
+            path: "Sources/ZDLayout"
+        ),
+        .testTarget(
+            name: "ZDLayoutTests",
+            dependencies: ["ZDLayout"]
         ),
         .testTarget(
             name: "ZDLayoutCoreTests",

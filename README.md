@@ -80,11 +80,11 @@ swift test
 | `Tests/ZDTaffyTests/` | Swift Testing suites |
 | `scripts/` | XCFramework build script |
 
-## ZDLayout (in progress)
+## ZDLayout
 
 `ZDLayout` is a declarative layout framework for UIKit built on top of `ZDTaffy`. This section records the agreed design and the trade-offs behind it.
 
-**Status:** `ZDLayoutCore` (node tree, containers, modifiers, solver, pixel snapping) is implemented and tested. The UIKit layer (`ZDLayout`: `FlexView`, `FlexScrollView`, `UIView` leaves, cells) is still design only, so the UIKit-facing snippets below are a sketch and may change.
+**Status:** implemented and tested. `ZDLayoutCore` runs on macOS (`swift test`); `ZDLayout` (`FlexView`, `FlexScrollView`, `UIView` leaves, `FlexContentConfiguration`) is tested on the iOS Simulator, including self-sizing collection view cells. Not done yet: a debug overlay is available in `DEBUG` builds, but there is no AppKit / SwiftUI adapter and no `UITableView`-specific helper.
 
 ### Goals
 
@@ -112,22 +112,28 @@ final class ProfileHeader: FlexView {
     let name = UILabel()
     let badge = BadgeView()
 
-    init() {
-        super.init {
-            Row(gap: 12, alignItems: .center) {
-                avatar.width(40).height(40)
-                Column(gap: 4) {
-                    name
-                    Row {
-                        Spacer()
-                        badge
-                    }
+    // Re-evaluated on every layout pass, so it can read your state directly.
+    // Swift does not carry a result builder over to an override: repeat `@LayoutBuilder`.
+    @LayoutBuilder override func body() -> [LayoutNode] {
+        Row(gap: 12, alignItems: .center) {
+            avatar.size(40)
+            Column(gap: 4) {
+                name.shrink(1)
+                Row {
+                    Spacer()
+                    badge
                 }
-                .grow(1)
             }
-            .padding(16)
+            .grow(1)
+            .shrink(1)
         }
+        .padding(16)
     }
+}
+
+// Or, without subclassing:
+let header = FlexView(insets: .layoutMargins) {
+    Row(gap: 8) { icon.size(24); title.grow(1).shrink(1) }
 }
 ```
 
@@ -175,6 +181,40 @@ Consequences:
 | **Right-to-left** | Direction follows `effectiveUserInterfaceLayoutDirection` of the container, so `leading` / `trailing` insets and `Row` order flip automatically. | Insets are logical only (`leading` / `trailing`); there is no physical `left` / `right`. Use `.custom` if you really need one. |
 | **Pixel alignment** | Taffy's own integer rounding is **off**. Frames are snapped to the screen's `scale` by the framework (0.5pt steps on 2x, 0.333pt on 3x). | Taffy rounds to whole points, which makes 2x/3x screens blurry or gappy. Snapping happens once on the final result, so accumulated rounding error does not leak into siblings. |
 | **Safe area** | **Not** applied by default. Opt in on the top-level container: `FlexView(insets: .safeArea) { … }` or `.layoutMargins`. | Most containers are nested and must not add the inset twice. |
+
+### Trade-off: items do not shrink by default
+
+CSS gives every flex item `flex-shrink: 1`. ZDLayout defaults to `0`, like Yoga (the old library) and SwiftUI:
+
+| | Behaviour | Cost |
+|---|---|---|
+| **Chosen: `shrink` = 0** | A view you gave `size(40)` stays 40 wide. Content taller than its container overflows instead of being squashed. | A label that must wrap or truncate next to other views needs an explicit `.shrink(1)`. |
+| CSS default: `shrink` = 1 | Items give up space when the container is too small. | Every fixed-size icon needs `.shrink(0)`, and a column inside a short container squashes its rows (this broke self-sizing cells during development: the content was compressed to the cell's estimated height). |
+
+Rule of thumb: put `.shrink(1)` on the text that should wrap or truncate, and on the containers that hold it.
+
+### How UIKit views are measured
+
+A `UIView` placed in the builder is a leaf. Its content size comes from, in order:
+
+1. `LayoutMeasurable.layoutSize(for:)` if the view adopts it (`FlexView` and `FlexScrollView` do).
+2. `UILabel`'s minimum width when the engine asks for the smallest possible size: the longest word if it can wrap, nothing if it is a single truncating line. This is what lets a long title shrink next to an icon instead of refusing to.
+3. `sizeThatFits(_:)` if the class overrides it. The width is the space offered, or the width the layout already fixed. The **height is never limited**: `UILabel` drops lines that do not fit a finite height, and an offered height is room, not a clip.
+4. Otherwise `intrinsicContentSize`. (A plain `UIView` answers `sizeThatFits` with its current size, which would make the layout feed on itself.)
+
+A plain `UIView()` has no size of its own: give it `.size(…)` or a `LayoutMeasurable` conformance.
+
+### Cells and Auto Layout
+
+`FlexView` reports `intrinsicContentSize` (natural width, and the height for its current width) and implements `systemLayoutSizeFitting`, so it works inside Auto Layout and self-sizing cells. `FlexContentConfiguration` uses it:
+
+```swift
+cell.contentConfiguration = FlexContentConfiguration(insets: .layoutMargins) {
+    Row(gap: 8, alignItems: .center) { icon.size(24); title.grow(1).shrink(1) }
+}
+```
+
+Height depends on width, but Auto Layout only asks for an intrinsic size. Like `UILabel`, `FlexView` reports the height for the width it has and, when that width changes, calls `invalidateIntrinsicContentSize()` once from `layoutSubviews`. This is verified with a `UICollectionView` list on the simulator. For `UITableView` the same mechanism applies but is not covered by a test yet.
 
 ### Other decisions
 

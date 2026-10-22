@@ -38,8 +38,13 @@ jobs:
       - name: Generated bindings are up to date
         run: git diff --exit-code -- Sources/
 
-      - name: Swift tests (macOS)
+      - name: Swift tests (macOS: ZDTaffy, ZDLayoutCore)
         run: swift test
+
+      - name: Swift tests (iOS Simulator: ZDLayout)
+        run: |
+          xcodebuild test -scheme ZDTaffy-Package -only-testing:ZDLayoutTests \
+            -destination 'platform=iOS Simulator,name=iPhone 16'
 
       - name: Build for iOS Simulator
         run: xcodebuild -scheme ZDTaffy -destination 'generic/platform=iOS Simulator' build
