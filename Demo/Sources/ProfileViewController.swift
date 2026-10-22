@@ -7,6 +7,17 @@ final class ProfileViewController: UIViewController {
     private var showsBadge = true
     private var isFollowing = false
 
+    /// The stats row has no view of its own; this guide lets an ordinary view be pinned around it with Auto Layout.
+    private let statsGuide = FlexGuide()
+    private let statsBackground: UIView = {
+        let view = UIView()
+        view.backgroundColor = .secondarySystemBackground
+        view.layer.cornerRadius = 14
+        view.layer.cornerCurve = .continuous
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+
     private lazy var scroll: FlexScrollView = FlexScrollView(insets: .layoutMargins) { [unowned self] in
         Column(gap: 20) {
             header
@@ -20,6 +31,7 @@ final class ProfileViewController: UIViewController {
                 stat("4.2K", "Followers")
                 stat("312", "Following")
             }
+            .guide(statsGuide)
             Row(gap: 12) {
                 followButton.grow(1).basis(0).height(44)
                 Managed<UIButton>(id: "message", make: { Self.button("Message", filled: false) }).grow(1).basis(0).height(44)
@@ -99,5 +111,15 @@ final class ProfileViewController: UIViewController {
     override func loadView() {
         view = scroll
         scroll.backgroundColor = .systemBackground
+        // Sits behind the content and hugs the (virtual) stats row, 8pt larger on every side.
+        scroll.insertSubview(statsBackground, at: 0)
+        statsGuide.whenInstalled { [statsBackground] guide in
+            NSLayoutConstraint.activate([
+                statsBackground.leftAnchor.constraint(equalTo: guide.leftAnchor, constant: -8),
+                statsBackground.topAnchor.constraint(equalTo: guide.topAnchor, constant: -8),
+                statsBackground.widthAnchor.constraint(equalTo: guide.widthAnchor, constant: 16),
+                statsBackground.heightAnchor.constraint(equalTo: guide.heightAnchor, constant: 16),
+            ])
+        }
     }
 }

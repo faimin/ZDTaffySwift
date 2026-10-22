@@ -73,7 +73,7 @@ final class FlexEngine {
 
                 // Keep the style the modifiers set; take measuring and the view from a regular view leaf.
                 let leaf = view.layoutNode
-                node = LayoutNode(style: node.style, children: [], measure: leaf.measure, content: view)
+                node = LayoutNode(style: node.style, children: [], measure: leaf.measure, content: view, guide: node.guide)
             }
         }
         if pruneUnused { created = created.filter { used.contains($0.key) } }
@@ -155,9 +155,100 @@ final class FlexEngine {
             }
         }
 
+        updateGuides(root: root, result: result, origin: origin, host: host)
+
         lastRoot = root
         lastResult = result
         return result.frame.size
+    }
+
+    // MARK: Guides
+
+    private final class InstalledGuide {
+        let guide: FlexGuide
+        let left: NSLayoutConstraint
+        let top: NSLayoutConstraint
+        let width: NSLayoutConstraint
+        let height: NSLayoutConstraint
+
+        @MainActor
+        init(guide: FlexGuide, origin: UIView) {
+            self.guide = guide
+            let layoutGuide = guide.layoutGuide
+            // Physical anchors, because frames are physical: they must not flip with the layout direction.
+            left = layoutGuide.leftAnchor.constraint(equalTo: origin.leftAnchor)
+            top = layoutGuide.topAnchor.constraint(equalTo: origin.topAnchor)
+            width = layoutGuide.widthAnchor.constraint(equalToConstant: 0)
+            height = layoutGuide.heightAnchor.constraint(equalToConstant: 0)
+        }
+
+        @MainActor
+        func apply(_ frame: CGRect, origin: CGPoint) {
+            // Changing a constraint asks UIKit for another layout pass, so leave unchanged ones alone.
+            func set(_ constraint: NSLayoutConstraint, _ value: CGFloat) {
+                if constraint.constant != value { constraint.constant = value }
+            }
+            set(left, frame.minX - origin.x)
+            set(top, frame.minY - origin.y)
+            set(width, frame.width)
+            set(height, frame.height)
+        }
+    }
+
+    private var installedGuides: [ObjectIdentifier: InstalledGuide] = [:]
+    private var scrollOrigin: UIView?
+
+    /// The view guides are measured from. For a plain host that is the host itself. A scroll view's own edges (and
+    /// its `contentLayoutGuide`) move with `contentOffset` in Auto Layout, so a zero-size sibling parked at the
+    /// content origin stands in for it: sibling-to-sibling constraints are not affected by the offset.
+    private func guideOrigin(in host: UIView) -> UIView {
+        guard let scroll = host as? UIScrollView else { return host }
+        if let scrollOrigin { return scrollOrigin }
+        let proxy = UIView(frame: .zero)
+        proxy.isUserInteractionEnabled = false
+        proxy.isHidden = true
+        scroll.insertSubview(proxy, at: 0)
+        scrollOrigin = proxy
+        return proxy
+    }
+
+    /// Tells every guide in the description where its node landed, and keeps each ``FlexGuide``'s `UILayoutGuide`
+    /// installed in `host` and pinned to that frame.
+    private func updateGuides(root: LayoutNode, result: ResolvedLayout, origin: CGPoint, host: UIView) {
+        var seen = Set<ObjectIdentifier>()
+        root.forEach(solvedBy: result) { node, resolved in
+            guard let guide = node.guide else { return }
+            let frame = resolved.absoluteFrame.offsetBy(dx: origin.x, dy: origin.y)
+            guide.resolve(frame)
+
+            guard let flexGuide = guide as? FlexGuide else { return }
+            let id = ObjectIdentifier(flexGuide)
+            seen.insert(id)
+            let installed: InstalledGuide
+            if let existing = installedGuides[id] {
+                installed = existing
+            } else {
+                flexGuide.layoutGuide.owningView?.removeLayoutGuide(flexGuide.layoutGuide)
+                host.addLayoutGuide(flexGuide.layoutGuide)
+                installed = InstalledGuide(guide: flexGuide, origin: guideOrigin(in: host))
+                NSLayoutConstraint.activate([installed.left, installed.top, installed.width, installed.height])
+                installedGuides[id] = installed
+                installed.apply(frame, origin: origin)
+                flexGuide.didInstall()
+            }
+            installed.apply(frame, origin: origin)
+        }
+
+        for (id, installed) in installedGuides where !seen.contains(id) {
+            NSLayoutConstraint.deactivate([installed.left, installed.top, installed.width, installed.height])
+            host.removeLayoutGuide(installed.guide.layoutGuide)
+            installed.guide.resolve(.zero)
+            installedGuides[id] = nil
+        }
+        if installedGuides.isEmpty, let proxy = scrollOrigin {
+            proxy.removeFromSuperview()
+            scrollOrigin = nil
+        }
     }
 
     /// Adds new views, removes the ones that disappeared and keeps managed views in description order.

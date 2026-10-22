@@ -232,6 +232,29 @@ Managed<UISwitch>(id: "notifications", make: { UISwitch() }) { $0.isOn = isOn }
 
 `Row`, `Column`, `Flex`, `Grid` and `Spacer` are layout nodes only: they never create a `UIView`, so the view hierarchy contains just the leaves, however deeply the description nests. This is what `UILayoutGuide` / ZDFlexLayoutKit's `ZDFlexLayoutDiv` are used for elsewhere.
 
+To get at a virtual container (to read its frame, or pin an ordinary view to it with Auto Layout), attach a guide with `.guide(_:)`:
+
+```swift
+let stats = FlexGuide()
+
+Row(gap: 12) { stat("128", "Posts"); stat("4.2K", "Followers") }.guide(stats)
+
+stats.whenInstalled { guide in                       // a real UILayoutGuide
+    NSLayoutConstraint.activate([
+        background.leftAnchor.constraint(equalTo: guide.leftAnchor, constant: -8),
+        background.topAnchor.constraint(equalTo: guide.topAnchor, constant: -8),
+        background.widthAnchor.constraint(equalTo: guide.widthAnchor, constant: 16),
+        background.heightAnchor.constraint(equalTo: guide.heightAnchor, constant: 16),
+    ])
+}
+stats.frame                                          // or just read it after layout
+```
+
+- `LayoutGuide` (in `ZDLayoutCore`) only records the frame. `FlexGuide` (in `ZDLayout`) also owns a `UILayoutGuide`: the host installs it during layout and pins it with four constant constraints, which it updates only when the frame changes, so a steady layout costs no extra Auto Layout pass. It is removed when the description stops mentioning the guide.
+- Create constraints inside `whenInstalled`. Before the first layout the `UILayoutGuide` has no view to belong to, and activating a constraint that mentions it would throw.
+- Frames are physical (`left`/`top`), so use `leftAnchor`, not `leadingAnchor`, to line up with them in right-to-left layouts.
+- In a `FlexScrollView` the guide is measured from a hidden zero-size view parked at the content origin. A scroll view's own edges (and its `contentLayoutGuide`) move with `contentOffset` in Auto Layout, which would shift every follower by the current offset.
+
 ### Other decisions
 
 | Topic | Decision | Alternative not taken, and why |

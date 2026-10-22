@@ -232,6 +232,29 @@ Managed<UISwitch>(id: "notifications", make: { UISwitch() }) { $0.isOn = isOn }
 
 `Row`、`Column`、`Flex`、`Grid`、`Spacer` 只是布局节点,从不创建 `UIView`:无论描述嵌套多深,视图层级里只有叶子。这正是其他框架里 `UILayoutGuide` / ZDFlexLayoutKit 的 `ZDFlexLayoutDiv` 的用途。
 
+想要访问一个虚拟容器(读它的 frame,或者用 Auto Layout 把普通视图约束到它),用 `.guide(_:)` 挂一个 guide:
+
+```swift
+let stats = FlexGuide()
+
+Row(gap: 12) { stat("128", "Posts"); stat("4.2K", "Followers") }.guide(stats)
+
+stats.whenInstalled { guide in                       // 真正的 UILayoutGuide
+    NSLayoutConstraint.activate([
+        background.leftAnchor.constraint(equalTo: guide.leftAnchor, constant: -8),
+        background.topAnchor.constraint(equalTo: guide.topAnchor, constant: -8),
+        background.widthAnchor.constraint(equalTo: guide.widthAnchor, constant: 16),
+        background.heightAnchor.constraint(equalTo: guide.heightAnchor, constant: 16),
+    ])
+}
+stats.frame                                          // 或者布局后直接读 frame
+```
+
+- `LayoutGuide`(在 `ZDLayoutCore`)只记录 frame。`FlexGuide`(在 `ZDLayout`)还持有一个 `UILayoutGuide`:宿主在布局时把它装进自己,用四个常量约束固定,并且只在 frame 变化时才更新这些约束,所以稳定的布局不会多一次 Auto Layout 传递。描述不再提到这个 guide 时它会被移除。
+- 约束要写在 `whenInstalled` 里。第一次布局之前 `UILayoutGuide` 还不属于任何视图,此时激活引用它的约束会抛异常。
+- frame 是物理坐标(`left` / `top`),所以要和它对齐请用 `leftAnchor`,不要用 `leadingAnchor`,否则在从右到左布局里会错位。
+- 在 `FlexScrollView` 里,guide 以一个停在内容原点的隐藏零尺寸视图为基准。滚动视图自己的边缘(包括 `contentLayoutGuide`)在 Auto Layout 里会随 `contentOffset` 移动,直接用会让所有跟随者偏移当前的滚动量。
+
 ### 其他决策
 
 | 主题 | 决定 | 没有采用的方案及原因 |

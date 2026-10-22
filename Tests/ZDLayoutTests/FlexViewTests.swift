@@ -610,4 +610,212 @@ struct ManagedViewTests {
         #expect(toggle?.isOn == true)
     }
 }
+
+@MainActor
+@Suite("Flex guides")
+struct GuideTests {
+    @Test func guideReportsTheFrameOfAVirtualContainer() {
+        let guide = FlexGuide()
+        let a = fixed(0, 0), b = fixed(0, 0)
+        let view = FlexView {
+            Column(gap: 10) {
+                Row(gap: 4) { a.size(30, 20); b.size(30, 20) }.guide(guide)
+            }
+            .padding(8)
+        }
+        layout(view, width: 200, height: 100)
+
+        #expect(guide.frame == CGRect(x: 8, y: 8, width: 184, height: 20))
+        // The container is virtual: only the two leaves are subviews.
+        #expect(view.subviews.count == 2)
+    }
+
+    @Test func autoLayoutCanFollowAGuide() {
+        let guide = FlexGuide()
+        let a = fixed(0, 0)
+        let follower = UIView()
+        let view = FlexView {
+            Column { Row { a.size(30, 20) }.guide(guide) }.padding(12)
+        }
+        view.addSubview(follower)
+        let layoutGuide = guide.layoutGuide
+        follower.translatesAutoresizingMaskIntoConstraints = false
+
+        layout(view, width: 200, height: 100)
+        NSLayoutConstraint.activate([
+            follower.leftAnchor.constraint(equalTo: layoutGuide.leftAnchor),
+            follower.topAnchor.constraint(equalTo: layoutGuide.bottomAnchor, constant: 6),
+            follower.widthAnchor.constraint(equalTo: layoutGuide.widthAnchor),
+            follower.heightAnchor.constraint(equalToConstant: 5),
+        ])
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        view.layoutIfNeeded()
+
+        #expect(layoutGuide.owningView === view)
+        #expect(follower.frame == CGRect(x: 12, y: 12 + 20 + 6, width: 176, height: 5))
+    }
+
+    @Test func whenInstalledIsSafeToUseBeforeTheFirstLayout() {
+        let guide = FlexGuide()
+        let a = fixed(0, 0)
+        let follower = UIView()
+        follower.translatesAutoresizingMaskIntoConstraints = false
+        let view = FlexView {
+            Column { Row { a.size(30, 20) }.guide(guide) }.padding(10)
+        }
+        view.addSubview(follower)
+
+        // Before the first layout the guide has no host; this would otherwise throw when activated.
+        nonisolated(unsafe) var installs = 0
+        guide.whenInstalled { layoutGuide in
+            installs += 1
+            NSLayoutConstraint.activate([
+                follower.leftAnchor.constraint(equalTo: layoutGuide.leftAnchor, constant: -4),
+                follower.topAnchor.constraint(equalTo: layoutGuide.topAnchor, constant: -4),
+                follower.widthAnchor.constraint(equalTo: layoutGuide.widthAnchor, constant: 8),
+                follower.heightAnchor.constraint(equalTo: layoutGuide.heightAnchor, constant: 8),
+            ])
+        }
+        layout(view, width: 100, height: 100)
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        view.layoutIfNeeded()
+
+        #expect(installs == 1)
+        #expect(follower.frame == CGRect(x: 6, y: 6, width: 88, height: 28))
+    }
+
+    @Test func whenInstalledRunsImmediatelyForAnInstalledGuide() {
+        let guide = FlexGuide()
+        let view = FlexView { Row { fixed(0, 0).size(10, 10) }.guide(guide) }
+        layout(view, width: 100, height: 100)
+
+        nonisolated(unsafe) var called = false
+        guide.whenInstalled { _ in called = true }
+
+        #expect(called)
+    }
+
+    @Test func followersMoveWhenTheLayoutChanges() {
+        let guide = FlexGuide()
+        let a = fixed(0, 0)
+        let follower = UIView()
+        nonisolated(unsafe) var height: CGFloat = 20
+        let view = FlexView {
+            Column { Row { a.height(height) }.guide(guide) }
+        }
+        view.addSubview(follower)
+        follower.translatesAutoresizingMaskIntoConstraints = false
+        layout(view, width: 100, height: 100)
+        NSLayoutConstraint.activate([
+            follower.leftAnchor.constraint(equalTo: guide.layoutGuide.leftAnchor),
+            follower.topAnchor.constraint(equalTo: guide.layoutGuide.bottomAnchor),
+            follower.widthAnchor.constraint(equalToConstant: 10),
+            follower.heightAnchor.constraint(equalToConstant: 10),
+        ])
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        view.layoutIfNeeded()
+        #expect(follower.frame.minY == 20)
+
+        height = 50
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        view.layoutIfNeeded()
+
+        #expect(guide.frame.height == 50)
+        #expect(follower.frame.minY == 50)
+    }
+
+    @Test func guidesAreRemovedWhenTheDescriptionDropsThem() {
+        let guide = FlexGuide()
+        nonisolated(unsafe) var showsGuide = true
+        let a = fixed(0, 0)
+        let view = FlexView {
+            Column {
+                if showsGuide { Row { a.size(10, 10) }.guide(guide) } else { a.size(10, 10) }
+            }
+        }
+        layout(view, width: 100, height: 100)
+        #expect(guide.layoutGuide.owningView === view)
+        let installed = view.layoutGuides.count
+
+        showsGuide = false
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+
+        #expect(guide.layoutGuide.owningView == nil)
+        #expect(view.layoutGuides.count == installed - 1)
+        #expect(guide.frame == .zero)
+    }
+
+    @Test func framesStayPhysicalInRightToLeft() {
+        let guide = FlexGuide()
+        let a = fixed(0, 0)
+        let follower = UIView()
+        let view = FlexView {
+            Row { a.size(30, 10) }.guide(guide)
+        }
+        view.semanticContentAttribute = .forceRightToLeft
+        view.addSubview(follower)
+        follower.translatesAutoresizingMaskIntoConstraints = false
+        layout(view, width: 200, height: 40)
+        NSLayoutConstraint.activate([
+            follower.leftAnchor.constraint(equalTo: guide.layoutGuide.leftAnchor),
+            follower.topAnchor.constraint(equalTo: guide.layoutGuide.topAnchor),
+            follower.widthAnchor.constraint(equalToConstant: 4),
+            follower.heightAnchor.constraint(equalToConstant: 4),
+        ])
+        view.layoutIfNeeded()
+
+        // The row spans the width and its content sits at the right edge; the guide is the row, so it starts at 0.
+        #expect(a.frame.maxX == 200)
+        #expect(guide.frame.minX == 0)
+        #expect(follower.frame.minX == 0)
+    }
+
+    @Test func followersOfAGuideInAScrollViewLandOnTheContentNotTheViewport() {
+        let guide = FlexGuide()
+        let views = (0..<4).map { _ in fixed(0, 0) }
+        let follower = UIView()
+        follower.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = FlexScrollView {
+            Column { for v in views.prefix(2) { v.height(100) }; Row { views[2].height(60) }.guide(guide) }
+        }
+        // A navigation bar's worth of inset, as UIKit applies for a scroll view under a bar.
+        scroll.contentInset = UIEdgeInsets(top: 100, left: 0, bottom: 0, right: 0)
+        scroll.addSubview(follower)
+        guide.whenInstalled { layoutGuide in
+            NSLayoutConstraint.activate([
+                follower.leftAnchor.constraint(equalTo: layoutGuide.leftAnchor),
+                follower.topAnchor.constraint(equalTo: layoutGuide.topAnchor),
+                follower.widthAnchor.constraint(equalTo: layoutGuide.widthAnchor),
+                follower.heightAnchor.constraint(equalTo: layoutGuide.heightAnchor),
+            ])
+        }
+        layout(scroll, width: 200, height: 300)
+        scroll.contentOffset = CGPoint(x: 0, y: -100)
+        for _ in 0..<3 { scroll.setNeedsLayout(); scroll.layoutIfNeeded() }
+
+        #expect(guide.frame == CGRect(x: 0, y: 200, width: 200, height: 60))
+        #expect(follower.frame == guide.frame)
+        #expect(scroll.contentSize.height == 260)
+    }
+
+    @Test func guidesWorkInsideAScrollView() {
+        let guide = FlexGuide()
+        let views = (0..<4).map { _ in fixed(0, 0) }
+        let scroll = FlexScrollView {
+            Column { for v in views.prefix(2) { v.height(100) }; Row { views[2].height(100) }.guide(guide) }
+        }
+        layout(scroll, width: 200, height: 200)
+        scroll.contentOffset = CGPoint(x: 0, y: 120)
+        scroll.setNeedsLayout()
+        scroll.layoutIfNeeded()
+
+        // Content coordinates, regardless of how far the scroll view has been scrolled.
+        #expect(guide.frame == CGRect(x: 0, y: 200, width: 200, height: 100))
+    }
+}
 #endif
