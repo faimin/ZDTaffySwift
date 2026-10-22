@@ -201,7 +201,7 @@ Consequences:
 
 - After changing a label's text, font or image, call `flexView.setNeedsLayout()` (UIKit already requires this for frame-based layout). You never need to know *which* node changed.
 - Large screens with hundreds of leaves pay for hundreds of measurements per pass. If profiling shows this matters, an opt-in cache keyed by `(view, size constraint)` can be added; it is intentionally not the default because a cache that can go stale is worse than a slow one.
-- Measurement within a single pass is memoised, so one leaf asked the same question twice by the solver is only measured once.
+- Within a pass the engine asks each leaf about a handful of different sizes (about seven: how big with no limit, how small, how tall at this width, …), almost never the same one twice, since it caches a node's results itself. So there is nothing to gain from memoising inside a `LeafMeasure`.
 - `Measure` must be a pure function of the view's current state and the constraint.
 
 ### Trade-off: UIKit environment semantics are automatic
@@ -283,16 +283,20 @@ Every layout pass measures every leaf again (see the trade-off above), so the co
 
 | Rows | Leaves | One layout pass |
 |---|---|---|
-| 10 | 30 | ≈ 1 ms |
-| 50 | 150 | ≈ 4 ms |
-| 100 | 300 | ≈ 12 ms |
-| 250 | 750 | ≈ 27 ms |
+| 10 | 30 | ≈ 0.7 ms |
+| 50 | 150 | ≈ 3.5 ms |
+| 100 | 300 | ≈ 6.5 ms |
+| 250 | 750 | ≈ 18 ms |
 
-That is about 35 µs per leaf, so a typical screen (tens of leaves) costs a few milliseconds, and a cell of ten leaves well under half of one. A device is slower than the simulator's host; leave headroom. For a very long list use a reusing container (`UICollectionView`, `UITableView`) and `FlexContentConfiguration`, which lays out only visible cells, rather than one `FlexScrollView` with hundreds of rows.
+That is about 22 µs per leaf, so a typical screen (tens of leaves) costs a couple of milliseconds, and a cell of ten leaves a fraction of one. A device is slower than the simulator's host; leave headroom. For a very long list use a reusing container (`UICollectionView`, `UITableView`) and `FlexContentConfiguration`, which lays out only visible cells, rather than one `FlexScrollView` with hundreds of rows.
 
-What the measurements found, and what was done about it: asking a `UILabel` for its smallest width meant measuring its longest words with `boundingRect` on every pass, which was ~70% of the time. The widest word is now remembered by content (text and font), which cut a 250-row pass from 73 ms to 27 ms. `UILabel.sizeThatFits` itself is cheap (about 0.3 µs per question once UIKit has cached the text layout). Inside the engine, a node costs about 9 µs on macOS, of which most is encoding a `Style` across the BoltFFI boundary (`newLeaf` ≈ 3.5 µs; Taffy's own work ≈ 0.8 µs). A bulk "build the whole tree in one call" API would remove most of that and has not been needed yet.
+What the measurements found, and what was done about it:
 
-Reproduce: `cd Benchmarks && swift run -c release ZDLayoutBench` (solver only, macOS), and `TEST_RUNNER_ZDLAYOUT_PERF=1 xcodebuild test -scheme ZDTaffy-Package -configuration Release ENABLE_TESTABILITY=YES -only-testing:ZDLayoutTests/PerformanceReport -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | grep -A8 PERFREPORT` (real UIKit views).
+- Asking a `UILabel` for its smallest width meant measuring its longest words with `boundingRect` on every pass: ~70% of the time. The widest word is now remembered by content (text and font): a 250-row pass went from 73 ms to 27 ms. `UILabel.sizeThatFits` itself is cheap (about 0.3 µs per question once UIKit has cached the text layout).
+- The engine used to cross the BoltFFI boundary once per node, encoding a whole `Style` each time (`newLeaf` ≈ 3.5 µs, while Taffy's own work is under 1 µs), and once per measure question with typed parameters. The solver now sends the whole tree in one call (distinct styles once, nodes as a flat list of small records) and measure questions as plain numbers. On macOS a node went from about 9 µs to about 2.5 µs (2,500 nodes: 22 ms to 6 ms), and a 250-row UIKit pass from 27 ms to 18 ms.
+- What is left is mostly UIKit itself: creating and updating the views a pass describes, and setting frames.
+
+Reproduce: `cd Benchmarks && swift run -c release ZDLayoutBench` (solver only, macOS), and `TEST_RUNNER_ZDLAYOUT_PERF=1 xcodebuild test -scheme ZDTaffy-Package -configuration Release ENABLE_TESTABILITY=YES -only-testing:ZDLayoutTests/PerformanceReport -destination "id=$(scripts/latest-iphone-simulator.sh)" 2>&1 | grep -A8 PERFREPORT` (real UIKit views).
 
 ### How UIKit views are measured
 

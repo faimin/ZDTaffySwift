@@ -72,3 +72,4 @@ try perCall("tree.newLeaf(style:)") { ids = []; for _ in 0..<n { ids.append(try 
 try perCall("tree.layout(node:)") { for id in ids { _ = try tree.layout(node: id) } }
 let parent = try tree.newWithChildren(style: base, children: Array(ids.prefix(1000)))
 try perCall("computeLayout (1000 children, /5000)") { try tree.computeLayout(root: parent, available: AvailableSize(width: .definite(390), height: .maxContent)) }
+

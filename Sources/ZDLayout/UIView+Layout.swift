@@ -87,13 +87,28 @@ extension UIView {
         ))
     }
 
-    /// Whether this view's class provides its own `sizeThatFits(_:)`.
+    /// Whether this view's class provides its own `sizeThatFits(_:)`. Asked on every measurement, so remembered
+    /// per class.
+    @MainActor
     private var overridesSizeThatFits: Bool {
+        let type = ObjectIdentifier(Swift.type(of: self))
+        if let known = SizeThatFitsOverrides.byClass[type] { return known }
         let selector = #selector(UIView.sizeThatFits(_:))
-        guard let own = class_getInstanceMethod(type(of: self), selector),
-              let base = class_getInstanceMethod(UIView.self, selector) else { return true }
-        return method_getImplementation(own) != method_getImplementation(base)
+        let answer: Bool
+        if let own = class_getInstanceMethod(Swift.type(of: self), selector),
+           let base = class_getInstanceMethod(UIView.self, selector) {
+            answer = method_getImplementation(own) != method_getImplementation(base)
+        } else {
+            answer = true
+        }
+        SizeThatFitsOverrides.byClass[type] = answer
+        return answer
     }
+}
+
+@MainActor
+private enum SizeThatFitsOverrides {
+    static var byClass: [ObjectIdentifier: Bool] = [:]
 }
 
 extension UILabel {
@@ -113,8 +128,10 @@ extension UILabel {
 
     @MainActor
     private func longestWordWidth() -> CGFloat {
-        let text = attributedText ?? NSAttributedString(string: self.text ?? "", attributes: [.font: font as Any])
-        return LongestWordCache.width(of: text)
+        // Plain text is by far the common case; keying it by (string, font) avoids building and hashing an
+        // attributed string for every question.
+        if let attributedText { return LongestWordCache.width(of: .attributed(attributedText)) }
+        return LongestWordCache.width(of: .plain(text ?? "", font))
     }
 }
 
@@ -123,12 +140,21 @@ extension UILabel {
 /// Content-keyed: changing the text or font simply misses.
 @MainActor
 private enum LongestWordCache {
-    private static var widths: [NSAttributedString: CGFloat] = [:]
+    enum Text: Hashable {
+        case plain(String, UIFont)
+        case attributed(NSAttributedString)
+    }
+
+    private static var widths: [Text: CGFloat] = [:]
     private static let capacity = 2048
 
-    static func width(of text: NSAttributedString) -> CGFloat {
+    static func width(of text: Text) -> CGFloat {
         if let cached = widths[text] { return cached }
-        let width = measure(text)
+        let width: CGFloat
+        switch text {
+        case .plain(let string, let font): width = measure(NSAttributedString(string: string, attributes: [.font: font as Any]))
+        case .attributed(let string): width = measure(string)
+        }
         if widths.count >= capacity { widths.removeAll(keepingCapacity: true) }
         widths[text] = width
         return width

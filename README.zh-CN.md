@@ -201,7 +201,7 @@ Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、
 
 - 修改 label 的文字、字体或图片后,调用 `flexView.setNeedsLayout()`(基于 frame 的 UIKit 布局本来就要这样做)。你不需要知道是哪个节点变了。
 - 如果一个页面有几百个叶子,每次布局就要测量几百次。若性能分析显示这是瓶颈,可以加一个按 `(视图, 尺寸约束)` 为键的可选缓存;它不是默认行为,因为"可能过期的缓存"比"慢一点"更糟。
-- 单次布局内部的测量是有记忆的,求解器对同一个叶子问两次同样的问题,只会测量一次。
+- 一遍布局里,引擎会向每个叶子询问几种不同的尺寸(大约七种:不限制时多大、最小多大、在这个宽度下多高……),几乎不会问两次同样的,因为它自己缓存了节点的结果。所以在 `LeafMeasure` 里再做记忆化没有收益。
 - 测量必须是视图当前状态和约束的纯函数。
 
 ### 取舍:UIKit 环境语义自动处理
@@ -283,16 +283,20 @@ let size = await flexView.sizeThatFitsAsync(CGSize(width: 320, height: .greatest
 
 | 行数 | 叶子数 | 一遍布局 |
 |---|---|---|
-| 10 | 30 | ≈ 1 ms |
-| 50 | 150 | ≈ 4 ms |
-| 100 | 300 | ≈ 12 ms |
-| 250 | 750 | ≈ 27 ms |
+| 10 | 30 | ≈ 0.7 ms |
+| 50 | 150 | ≈ 3.5 ms |
+| 100 | 300 | ≈ 6.5 ms |
+| 250 | 750 | ≈ 18 ms |
 
-约每个叶子 35 µs,所以典型页面(几十个叶子)花几毫秒,一个十来个叶子的 cell 远不到一毫秒的一半。真机比模拟器所在的 Mac 慢,要留余量。很长的列表请用会复用的容器(`UICollectionView`、`UITableView`)加 `FlexContentConfiguration`,它只布局可见的 cell,不要用一个装着几百行的 `FlexScrollView`。
+约每个叶子 22 µs,所以典型页面(几十个叶子)花一两毫秒,一个十来个叶子的 cell 只占一毫秒的一小部分。真机比模拟器所在的 Mac 慢,要留余量。很长的列表请用会复用的容器(`UICollectionView`、`UITableView`)加 `FlexContentConfiguration`,它只布局可见的 cell,不要用一个装着几百行的 `FlexScrollView`。
 
-测量发现了什么、做了什么:向 `UILabel` 询问最小宽度时,每遍都要用 `boundingRect` 测量它最长的几个单词,占了约 70% 的时间。现在最宽单词按内容(文字和字体)记住,250 行一遍从 73 ms 降到 27 ms。`UILabel.sizeThatFits` 本身很便宜(UIKit 缓存了文字排版之后,每次询问约 0.3 µs)。引擎内部在 macOS 上每个节点约 9 µs,大部分是把 `Style` 编码过 BoltFFI 边界(`newLeaf` ≈ 3.5 µs,Taffy 自己的工作 ≈ 0.8 µs)。"一次调用建好整棵树"的批量 API 可以去掉大部分,目前还没有必要。
+测量发现了什么、做了什么:
 
-复现:`cd Benchmarks && swift run -c release ZDLayoutBench`(只测求解器,macOS),以及 `TEST_RUNNER_ZDLAYOUT_PERF=1 xcodebuild test -scheme ZDTaffy-Package -configuration Release ENABLE_TESTABILITY=YES -only-testing:ZDLayoutTests/PerformanceReport -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | grep -A8 PERFREPORT`(真实 UIKit 视图)。
+- 向 `UILabel` 询问最小宽度时,每遍都要用 `boundingRect` 测量它最长的几个单词,占了约 70% 的时间。现在最宽单词按内容(文字和字体)记住:250 行一遍从 73 ms 降到 27 ms。`UILabel.sizeThatFits` 本身很便宜(UIKit 缓存了文字排版之后,每次询问约 0.3 µs)。
+- 引擎原先每个节点穿越一次 BoltFFI 边界,每次都要编码完整的 `Style`(`newLeaf` ≈ 3.5 µs,而 Taffy 自己的工作不到 1 µs),每个测量问题也用带类型的参数穿越一次。现在求解器一次调用发送整棵树(不同的样式只发一份,节点是一个由小记录组成的扁平列表),测量问题用纯数字传递。在 macOS 上每个节点从约 9 µs 降到约 2.5 µs(2500 个节点从 22 ms 到 6 ms),250 行的 UIKit 一遍从 27 ms 到 18 ms。
+- 剩下的主要是 UIKit 自己:创建和更新这一遍所描述的视图,以及设置 frame。
+
+复现:`cd Benchmarks && swift run -c release ZDLayoutBench`(只测求解器,macOS),以及 `TEST_RUNNER_ZDLAYOUT_PERF=1 xcodebuild test -scheme ZDTaffy-Package -configuration Release ENABLE_TESTABILITY=YES -only-testing:ZDLayoutTests/PerformanceReport -destination "id=$(scripts/latest-iphone-simulator.sh)" 2>&1 | grep -A8 PERFREPORT`(真实 UIKit 视图)。
 
 ### UIKit 视图如何测量
 

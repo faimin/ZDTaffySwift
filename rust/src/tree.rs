@@ -98,12 +98,12 @@ pub trait AsyncMeasure: Send + Sync {
 }
 
 /// Upper bound on layout passes for one async computation.
-const MAX_ASYNC_PASSES: usize = 64;
+pub(crate) const MAX_ASYNC_PASSES: usize = 64;
 
 /// Identifies one measure question; floats are compared bit-for-bit.
-type MeasureKey = (u64, [Option<u32>; 2], [(u8, u32); 2]);
+pub(crate) type MeasureKey = (u64, [Option<u32>; 2], [(u8, u32); 2]);
 
-fn space_key(space: taffy::AvailableSpace) -> (u8, u32) {
+pub(crate) fn space_key(space: taffy::AvailableSpace) -> (u8, u32) {
     match space {
         taffy::AvailableSpace::Definite(x) => (0, x.to_bits()),
         taffy::AvailableSpace::MinContent => (1, 0),

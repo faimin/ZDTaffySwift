@@ -165,9 +165,12 @@ extension ContentDistribution {
 }
 
 extension LayoutStyle {
+    /// `Style()` crosses the FFI boundary to ask Rust for its defaults; do that once, not once per node.
+    private static let defaultStyle = Style()
+
     /// Lowers this style to a `ZDTaffy.Style`, resolving `leading` / `trailing` for `direction`.
     func resolved(direction: LayoutDirection) -> Style {
-        var s = Style()
+        var s = Self.defaultStyle
         s.display = switch display {
         case _ where isHidden: .none
         case .flex: .flex

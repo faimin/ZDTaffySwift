@@ -61,25 +61,19 @@ public enum LayoutSolver {
     /// Computes the layout of `root`.
     ///
     /// The solver is synchronous and has no actor isolation; `measure` closures run on the calling thread.
-    /// Every call measures leaves afresh, but identical questions inside one call are answered once.
+    /// Every call measures leaves afresh. The engine asks each leaf about a handful of sizes (about seven), almost
+    /// never the same one twice, because it caches a node's results within a call.
     public static func solve(
         _ root: LayoutNode,
         in proposed: ProposedSize,
         sizing: RootSizing = .fill,
         environment: LayoutEnvironment = LayoutEnvironment()
     ) throws -> ResolvedLayout {
-        let root = adjusted(root, for: proposed, sizing: sizing)
-
-        let tree = TaffyTree()
-        // Rounding to whole points is wrong on 2x / 3x screens; ``PixelGrid`` snaps the final result instead.
-        tree.disableRounding()
-
-        let table = MeasureTable()
-        let built = try build(root, in: tree, environment: environment, table: table)
-        try tree.computeLayoutWithMeasure(root: built.id, available: proposed.taffy, measure: LeafMeasurer(table: table))
-
-        let grid = PixelGrid(scale: environment.scale)
-        return try resolve(built, in: tree, parentAbsolute: .zero, parentSnappedOrigin: .zero, grid: grid)
+        let flat = flatten(adjusted(root, for: proposed, sizing: sizing), environment: environment)
+        let layouts = try solveTree(
+            styles: flat.styles, nodes: flat.specs, available: proposed.taffy, measure: LeafMeasurer(table: flat.table)
+        )
+        return resolve(flat, layouts, grid: PixelGrid(scale: environment.scale))
     }
 
     /// Computes the layout of `root`, letting leaves measure asynchronously.
@@ -98,18 +92,12 @@ public enum LayoutSolver {
         environment: LayoutEnvironment = LayoutEnvironment(),
         isolation: isolated (any Actor)? = #isolation
     ) async throws -> ResolvedLayout {
-        let root = adjusted(root, for: proposed, sizing: sizing)
-
-        let tree = TaffyTree()
-        tree.disableRounding()
-
-        let table = MeasureTable()
-        let built = try build(root, in: tree, environment: environment, table: table)
-        let measurer = AsyncLeafMeasurer(table: table, isolation: isolation)
-        try await tree.computeLayoutWithAsyncMeasure(root: built.id, available: proposed.taffy, measure: measurer)
-
-        let grid = PixelGrid(scale: environment.scale)
-        return try resolve(built, in: tree, parentAbsolute: .zero, parentSnappedOrigin: .zero, grid: grid)
+        let flat = flatten(adjusted(root, for: proposed, sizing: sizing), environment: environment)
+        let measurer = AsyncLeafMeasurer(table: flat.table, isolation: isolation)
+        let layouts = try await solveTreeAsync(
+            styles: flat.styles, nodes: flat.specs, available: proposed.taffy, measure: measurer
+        )
+        return resolve(flat, layouts, grid: PixelGrid(scale: environment.scale))
     }
 
     /// Applies the root sizing rule to the proposal.
@@ -125,43 +113,63 @@ public enum LayoutSolver {
         return root
     }
 
-    // MARK: Building
+    // MARK: Flattening
 
-    private struct Built {
-        let id: NodeId
-        let children: [Built]
+    /// A tree in the form the engine takes it: pre-order nodes, each naming an entry of a de-duplicated style table.
+    private struct Flat {
+        var styles: [Style] = []
+        var styleIndices: [Style: UInt32] = [:]
+        var specs: [NodeSpec] = []
         /// Content-sized leaves must not end up narrower than the content that was measured for them.
-        let isMeasured: Bool
+        var isMeasured: [Bool] = []
+        let table = MeasureTable()
+
+        mutating func index(of style: Style) -> UInt32 {
+            if let index = styleIndices[style] { return index }
+            let index = UInt32(styles.count)
+            styles.append(style)
+            styleIndices[style] = index
+            return index
+        }
     }
 
-    private static func build(
-        _ node: LayoutNode,
-        in tree: TaffyTree,
-        environment: LayoutEnvironment,
-        table: MeasureTable
-    ) throws -> Built {
-        let style = node.style.resolved(direction: environment.direction)
-        if node.children.isEmpty {
-            let id = try tree.newLeaf(style: style)
-            if let measure = node.measure { table.functions[id] = measure }
-            if let asyncMeasure = node.asyncMeasure { table.asyncFunctions[id] = asyncMeasure }
-            return Built(id: id, children: [], isMeasured: node.measure != nil || node.asyncMeasure != nil)
+    private static func flatten(_ root: LayoutNode, environment: LayoutEnvironment) -> Flat {
+        var flat = Flat()
+        append(root, environment: environment, to: &flat)
+        return flat
+    }
+
+    private static func append(_ node: LayoutNode, environment: LayoutEnvironment, to flat: inout Flat) {
+        let style = flat.index(of: node.style.resolved(direction: environment.direction))
+        flat.specs.append(NodeSpec(style: style, childCount: UInt32(node.children.count)))
+        let isLeaf = node.children.isEmpty
+        flat.isMeasured.append(isLeaf && (node.measure != nil || node.asyncMeasure != nil))
+        flat.table.functions.append(isLeaf ? node.measure : nil)
+        flat.table.asyncFunctions.append(isLeaf ? node.asyncMeasure : nil)
+        for child in node.children {
+            append(child, environment: environment, to: &flat)
         }
-        let children = try node.children.map { try build($0, in: tree, environment: environment, table: table) }
-        let id = try tree.newWithChildren(style: style, children: children.map(\.id))
-        return Built(id: id, children: children, isMeasured: false)
     }
 
     // MARK: Resolving
 
+    private static func resolve(_ flat: Flat, _ layouts: [NodeLayout], grid: PixelGrid) -> ResolvedLayout {
+        var cursor = 0
+        return resolve(flat, layouts, cursor: &cursor, parentAbsolute: .zero, parentSnappedOrigin: .zero, grid: grid)
+    }
+
+    /// Consumes one node and its descendants from the pre-order `layouts`.
     private static func resolve(
-        _ built: Built,
-        in tree: TaffyTree,
+        _ flat: Flat,
+        _ layouts: [NodeLayout],
+        cursor: inout Int,
         parentAbsolute: CGPoint,
         parentSnappedOrigin: CGPoint,
         grid: PixelGrid
-    ) throws -> ResolvedLayout {
-        let layout = try tree.layout(node: built.id)
+    ) -> ResolvedLayout {
+        let index = cursor
+        cursor += 1
+        let layout = layouts[index]
         let absolute = CGRect(
             x: parentAbsolute.x + CGFloat(layout.location.x),
             y: parentAbsolute.y + CGFloat(layout.location.y),
@@ -171,9 +179,9 @@ public enum LayoutSolver {
         // Boxes snap both edges: neighbours then share an exact edge and rounding error cannot accumulate down
         // the tree. Content-sized leaves snap their origin and round the *size up*: a frame a fraction of a pixel
         // narrower than the measured text makes a label truncate, or wrap onto a line nobody made room for.
-        let snapped = built.isMeasured ? grid.snapContent(absolute) : grid.snap(absolute)
-        let children = try built.children.map {
-            try resolve($0, in: tree, parentAbsolute: absolute.origin, parentSnappedOrigin: snapped.origin, grid: grid)
+        let snapped = flat.isMeasured[index] ? grid.snapContent(absolute) : grid.snap(absolute)
+        let children = (0..<Int(flat.specs[index].childCount)).map { _ in
+            resolve(flat, layouts, cursor: &cursor, parentAbsolute: absolute.origin, parentSnappedOrigin: snapped.origin, grid: grid)
         }
         return ResolvedLayout(
             frame: CGRect(
@@ -218,8 +226,17 @@ struct PixelGrid {
 
 /// The measure functions of a tree's leaves, by node.
 private final class MeasureTable {
-    var functions: [NodeId: LeafMeasure] = [:]
-    var asyncFunctions: [NodeId: AsyncLeafMeasure] = [:]
+    /// Indexed by pre-order position; `nil` for containers and for leaves without that kind of measure.
+    var functions: [LeafMeasure?] = []
+    var asyncFunctions: [AsyncLeafMeasure?] = []
+
+    func function(at index: Int) -> LeafMeasure? {
+        functions.indices.contains(index) ? functions[index] : nil
+    }
+
+    func asyncFunction(at index: Int) -> AsyncLeafMeasure? {
+        asyncFunctions.indices.contains(index) ? asyncFunctions[index] : nil
+    }
 }
 
 private func constraint(_ node: NodeId, _ known: OptionalSize, _ available: AvailableSize) -> MeasureConstraint {
@@ -235,31 +252,30 @@ private func engineSize(_ size: CGSize) -> Size {
     Size(width: Float(max(size.width, 0)), height: Float(max(size.height, 0)))
 }
 
-/// Answers the engine's measure questions by calling the leaves' closures, memoising per pass.
-private final class LeafMeasurer: Measure {
+/// Answers the engine's measure questions by calling the leaves' closures.
+///
+/// It takes only numbers (see the Rust `TreeMeasure`), so a question costs no encoding. There is no memo: Taffy
+/// already caches a node's results within a pass, and measuring showed essentially no repeated question.
+private final class LeafMeasurer: TreeMeasure {
     private let table: MeasureTable
-    private var answers: [Question: Size] = [:]
 
     init(table: MeasureTable) { self.table = table }
 
-    private struct Question: Hashable {
-        let node: NodeId
-        let known: OptionalSize
-        let available: AvailableSize
-    }
-
-    func measure(node: NodeId, known: OptionalSize, available: AvailableSize) -> Size {
-        let question = Question(node: node, known: known, available: available)
-        if let answer = answers[question] { return answer }
-
-        let answer: Size
-        if let function = table.functions[node] {
-            answer = engineSize(function(constraint(node, known, available)))
-        } else {
-            answer = Size(width: 0, height: 0)
-        }
-        answers[question] = answer
-        return answer
+    func measure(
+        node: UInt32,
+        knownWidth: Float,
+        knownHeight: Float,
+        availableWidth: Float,
+        availableHeight: Float,
+        flags: UInt32
+    ) -> Size {
+        guard let function = table.function(at: Int(node)) else { return Size(width: 0, height: 0) }
+        return engineSize(function(MeasureConstraint(
+            knownWidth: flags & 0b1 != 0 ? CGFloat(knownWidth) : nil,
+            knownHeight: flags & 0b10 != 0 ? CGFloat(knownHeight) : nil,
+            availableWidth: AvailableLength(kind: (flags >> 2) & 0b11, points: availableWidth),
+            availableHeight: AvailableLength(kind: (flags >> 4) & 0b11, points: availableHeight)
+        )))
     }
 }
 
@@ -279,10 +295,10 @@ private final class AsyncLeafMeasurer: AsyncMeasure, @unchecked Sendable {
 
     func measure(node: NodeId, known: OptionalSize, available: AvailableSize) async -> Size {
         let request = constraint(node, known, available)
-        if let function = table.asyncFunctions[node] {
+        if let function = table.asyncFunction(at: Int(node.raw)) {
             return engineSize(await function(request))
         }
-        if let function = table.functions[node] {
+        if let function = table.function(at: Int(node.raw)) {
             return engineSize(await runSynchronously(on: isolation, request, function))
         }
         return Size(width: 0, height: 0)
@@ -295,6 +311,15 @@ private final class AsyncLeafMeasurer: AsyncMeasure, @unchecked Sendable {
 }
 
 private extension AvailableLength {
+    /// Decodes the `kind` / `points` pair `TreeMeasure` uses: 0 definite, 1 min-content, 2 max-content.
+    init(kind: UInt32, points: Float) {
+        switch kind {
+        case 0: self = .definite(CGFloat(points))
+        case 1: self = .minContent
+        default: self = .maxContent
+        }
+    }
+
     init(_ space: AvailableSpace) {
         switch space {
         case .definite(let v): self = .definite(CGFloat(v))

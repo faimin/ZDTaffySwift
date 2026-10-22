@@ -312,6 +312,26 @@ public struct GridTemplateAreas: Hashable, Equatable, Sendable {
     }
 }
 
+/// One node of a flattened tree: which entry of the style table it uses and how many children it has. Nodes are
+/// listed in pre-order, so a node's children (and their descendants) follow it directly.
+public struct NodeSpec: Hashable, Equatable, Sendable {
+    public var style: UInt32
+    public var childCount: UInt32
+
+    public init(style: UInt32, childCount: UInt32) {
+        self.style = style
+        self.childCount = childCount
+    }
+
+    @usableFromInline init(fromC c: ___NodeSpec) {
+        self.init(style: c.style, childCount: c.child_count)
+    }
+
+    @usableFromInline var cValue: ___NodeSpec {
+        ___NodeSpec(style: style, child_count: childCount)
+    }
+}
+
 /// Used for `align-items`, `justify-items`, `align-self` and `justify-self`.
 public struct AlignItems: Hashable, Equatable, Sendable {
     public var keyword: AlignItemsKeyword
@@ -1812,6 +1832,61 @@ public final class TaffyTree {
     }
 }
 
+/// Measures leaves for [`solve_tree`]. It takes only primitives so that the call needs no encoding on either side of
+/// the boundary: it runs thousands of times per layout (about seven questions per leaf), and with typed parameters
+/// that was most of the time.
+public protocol TreeMeasure: AnyObject {
+    func measure(
+        node: UInt32,
+        knownWidth: Float,
+        knownHeight: Float,
+        availableWidth: Float,
+        availableHeight: Float,
+        flags: UInt32
+    ) -> Size
+}
+
+private final class TreeMeasureWrapper {
+    let impl: TreeMeasure
+
+    init(_ impl: TreeMeasure) {
+        self.impl = impl
+    }
+}
+
+private var boltffiTreeMeasureVtable: ___TreeMeasureVTable = {
+    ___TreeMeasureVTable(
+        free: { handle in
+            guard handle != 0 else { return }
+            Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
+        },
+        clone: { handle in
+            guard handle != 0 else { return 0 }
+            let wrapper = Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
+            _ = wrapper.retain()
+            return handle
+        },
+        measure: { handle, node, known_width, known_height, available_width, available_height, flags in
+            guard handle != 0 else { fatalError("invalid callback handle") }
+            let wrapper = Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
+            return wrapper.impl.measure(node: node, knownWidth: known_width, knownHeight: known_height, availableWidth: available_width, availableHeight: available_height, flags: flags).cValue
+        }
+    )
+}()
+
+private enum TreeMeasureBridge {
+    private static let register: Void = {
+        boltffi_register_callback_zd_taffy_solve_tree_measure(&boltffiTreeMeasureVtable)
+    }()
+
+    static func create(_ impl: TreeMeasure) -> BoltFFICallbackHandle {
+        _ = register
+        let wrapper = TreeMeasureWrapper(impl)
+        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
+        return boltffi_create_callback_zd_taffy_solve_tree_measure(handle)
+    }
+}
+
 /// Supplies the intrinsic size of leaf nodes (text, images, ...) during layout.
 ///
 /// It is called synchronously from inside `compute_layout_with_measure`, possibly several
@@ -1916,6 +1991,97 @@ private enum AsyncMeasureBridge {
         let wrapper = AsyncMeasureWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
         return boltffi_create_callback_zd_taffy_tree_async_measure(handle)
+    }
+}
+
+/// Solves a flattened tree. `measure` is asked about leaves, identified by their pre-order index. Returns one
+/// layout per node, in pre-order.
+public func solveTree(
+    styles: [Style],
+    nodes: [NodeSpec],
+    available: AvailableSize,
+    measure: TreeMeasure
+) throws -> [NodeLayout] {
+    let boltffiStylesBytes = boltffiEncode { boltffiStylesWriter in boltffiStylesWriter.writeArray(styles) { boltffiStylesWriter, boltffiValue0 in boltffiValue0.encode(to: &boltffiStylesWriter) } }
+    return try boltffiStylesBytes.withUnsafeBufferPointer { boltffiStylesBuffer in
+        var boltffiNodesStorage: [___NodeSpec] = []
+        boltffiNodesStorage.reserveCapacity(nodes.count)
+        for item in nodes {
+            boltffiNodesStorage.append(item.cValue)
+        }
+        return try boltffiNodesStorage.withUnsafeBytes { boltffiNodesBuffer in
+            let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
+            return try boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer in
+                var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
+                let boltffiError = boltffi_function_zd_taffy_solve_solve_tree(
+                    boltffiStylesBuffer.baseAddress!,
+                    UInt(boltffiStylesBuffer.count),
+                    boltffiNodesBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    UInt(boltffiNodesBuffer.count),
+                    boltffiAvailableBuffer.baseAddress!,
+                    UInt(boltffiAvailableBuffer.count),
+                    TreeMeasureBridge.create(measure),
+                    &boltffiResult
+                )
+                if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
+                    defer { boltffi_free_buf(boltffiError) }
+                    throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
+                }
+                defer { boltffi_free_buf(boltffiResult) }
+                return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in NodeLayout.decode(from: &boltffiReader) } }
+            }
+        }
+    }
+}
+
+/// Like [`solve_tree`], but `measure` may suspend. The layout is recomputed until a pass asks nothing new, so the
+/// same question must always get the same answer.
+public func solveTreeAsync(
+    styles: [Style],
+    nodes: [NodeSpec],
+    available: AvailableSize,
+    measure: AsyncMeasure
+) async throws -> [NodeLayout] {
+    let boltffiStylesBytes = boltffiEncode { boltffiStylesWriter in boltffiStylesWriter.writeArray(styles) { boltffiStylesWriter, boltffiValue0 in boltffiValue0.encode(to: &boltffiStylesWriter) } }
+    let boltffiFuture = boltffiStylesBytes.withUnsafeBufferPointer { boltffiStylesBuffer in
+        var boltffiNodesStorage: [___NodeSpec] = []
+        boltffiNodesStorage.reserveCapacity(nodes.count)
+        for item in nodes {
+            boltffiNodesStorage.append(item.cValue)
+        }
+        return boltffiNodesStorage.withUnsafeBytes { boltffiNodesBuffer in
+            let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
+            return boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer in
+                return boltffi_function_zd_taffy_solve_solve_tree_async(
+                    boltffiStylesBuffer.baseAddress!,
+                    UInt(boltffiStylesBuffer.count),
+                    boltffiNodesBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    UInt(boltffiNodesBuffer.count),
+                    boltffiAvailableBuffer.baseAddress!,
+                    UInt(boltffiAvailableBuffer.count),
+                    AsyncMeasureBridge.create(measure)
+                )
+            }
+        }
+    }
+    return try await boltffiAsyncCall(
+        futureHandle: boltffiFuture,
+        poll: boltffi_async_function_zd_taffy_solve_solve_tree_async_poll,
+        cancel: boltffi_async_function_zd_taffy_solve_solve_tree_async_cancel,
+        free: boltffi_async_function_zd_taffy_solve_solve_tree_async_free
+    ) { boltffiFuture, boltffiStatus in
+        var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
+        let boltffiError = boltffi_async_function_zd_taffy_solve_solve_tree_async_complete(boltffiFuture, boltffiStatus, &boltffiResult)
+        if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
+            defer { boltffi_free_buf(boltffiError) }
+            throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
+        }
+        let boltffiStatusCode = boltffiStatus!.pointee.code
+        guard boltffiStatusCode == 0 else {
+            throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
+        }
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in NodeLayout.decode(from: &boltffiReader) } }
     }
 }
 

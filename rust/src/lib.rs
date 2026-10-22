@@ -2,10 +2,12 @@
 
 mod geometry;
 mod grid;
+mod solve;
 mod style;
 mod tree;
 
 pub use geometry::*;
 pub use grid::*;
+pub use solve::*;
 pub use style::*;
 pub use tree::*;
