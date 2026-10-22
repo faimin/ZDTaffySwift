@@ -100,6 +100,18 @@ public struct GridTrack: Hashable, Sendable {
         }
     }
 
+    /// Whether the track (or any track it repeats) is a flexible `fr` track.
+    public var hasFraction: Bool {
+        func isFraction(_ function: TrackSizingFunction) -> Bool {
+            if case .fr = function.max { return true }
+            return false
+        }
+        switch storage {
+        case .single(let function): return isFraction(function)
+        case .repeating(_, let functions): return functions.contains(where: isFraction)
+        }
+    }
+
     var autoTrack: TrackSizingFunction? {
         if case .single(let function) = storage { return function }
         return nil

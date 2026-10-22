@@ -84,7 +84,7 @@ swift test
 
 `ZDLayout` 是在 `ZDTaffy` 之上构建的 UIKit 声明式布局框架。本节记录已经确认的设计和取舍。
 
-**进度:** 已实现并通过测试。`ZDLayoutCore` 在 macOS 上用 `swift test` 运行;`ZDLayout`(`FlexView`、`FlexScrollView`、`UIView` 叶子、`FlexContentConfiguration`)在 iOS 模拟器上测试,包括 self-sizing 的 collection view cell。尚未完成:AppKit / SwiftUI 适配。(`DEBUG` 构建里有调试叠加层。)
+**进度:** 已实现并通过测试。`ZDLayoutCore` 在 macOS 上用 `swift test` 运行;`ZDLayout`(`FlexView`、`FlexScrollView`、`UIView` 叶子、`FlexContentConfiguration`)在 iOS 模拟器上测试,包括 self-sizing 的 collection view cell。`ZDLayoutSwiftUI` 和 `ZDLayoutAppKit` 在 macOS 上测试。(`DEBUG` 构建里有调试叠加层。)
 
 ### 目标
 
@@ -97,8 +97,10 @@ swift test
 
 | Target | 依赖 | 内容 |
 |---|---|---|
-| `ZDLayoutCore` | `ZDTaffy` | 与平台无关:节点树、`Style` 构造、求解器、测量协议。不依赖 UIKit,可在 macOS 上 `swift test`。 |
-| `ZDLayout` | `ZDLayoutCore`、UIKit | `FlexView`、`FlexScrollView`、DSL、`UIView` 适配、`FlexContentConfiguration`。 |
+| `ZDLayoutCore` | `ZDTaffy` | 与平台无关:节点树、`Style` 构造、求解器、测量协议、guide。不依赖 UIKit,可在 macOS 上 `swift test`。 |
+| `ZDLayout` | `ZDLayoutCore`、UIKit | `FlexView`、`FlexScrollView`、`FlexGuide`、DSL、`UIView` 适配、`FlexContentConfiguration`。 |
+| `ZDLayoutSwiftUI` | `ZDLayoutCore`、SwiftUI | `FlexLayout` / `FlexStack`(SwiftUI 的 `Layout`)、`.flexItem`、`.gridItem`。 |
+| `ZDLayoutAppKit` | `ZDLayoutCore`、AppKit | 面向 macOS 的 `FlexView` 与 `NSView` 适配。 |
 
 要求:Swift 6 语言模式,iOS 15+。所有面向 UIKit 的 API 都是 `@MainActor`。
 
@@ -192,6 +194,76 @@ CSS 给每个 flex 子项默认 `flex-shrink: 1`。ZDLayout 默认是 `0`,与 Yo
 | CSS 默认:`shrink` = 1 | 容器不够大时子项让出空间。 | 每个固定尺寸的图标都要写 `.shrink(0)`;矮容器里的 column 会压扁它的行(开发过程中 self-sizing cell 就因此被压成了预估高度)。 |
 
 经验法则:在需要换行或截断的文本上写 `.shrink(1)`,同时在包着它的容器上也写。
+
+### SwiftUI
+
+`ZDLayoutSwiftUI` 通过 `Layout` 协议把同一个引擎提供给 SwiftUI(iOS 16 / macOS 13+):
+
+```swift
+import ZDLayoutSwiftUI
+
+FlexStack(.row, gap: 12, alignItems: .center) {
+    Circle().frame(width: 40, height: 40)
+    Text("A title that wraps when it has to").flexItem(grow: 1, shrink: 1)
+    Text("12m").foregroundStyle(.secondary)
+}
+
+FlexStack(columns: [.fr(1), .fr(1), .fr(2)], gap: 8) {          // CSS Grid
+    ForEach(items) { ItemView($0) }
+    Banner().gridItem(column: .line(1, span: 3))
+}
+```
+
+- `.flexItem(grow:shrink:basis:alignSelf:margin:)` 或 `.flexItem { $0.… }`(一个 `ItemStyle`)设置子视图的属性;`.gridItem(column:row:)` 把它放进网格。
+- 子视图用 `subview.sizeThatFits(_:)` 测量:最小尺寸提议为 `0`,理想尺寸提议为 `nil`,这是 SwiftUI 的说法。
+- SwiftUI 容器自己决定大小。和装着 `Spacer` 的 `HStack` 一样,带有 `grow` 子项(或 `fr` 轨道)的 `FlexStack` 会占满在该轴上被提供的空间;否则就和内容一样大。
+- **从右到左由 SwiftUI 自己镜像**(对任何自定义 `Layout` 都是如此),所以 `FlexLayout` 永远按从左到右求解。(UIKit 和 AppKit 容器则按真实方向求解,因为没有人替它们镜像。)使用 `leading` / `trailing` 边距就会如预期翻转。
+- 这里 `shrink` 默认也是 `0`,所以要换行的文本请写 `shrink: 1`。
+
+### AppKit
+
+`ZDLayoutAppKit` 是 UIKit 层面向 `NSView` 的精简移植:`FlexView`(翻转坐标,原点在左上角)、任意 `NSView` 作为叶子、`Label` / `Image` / `Box` / `Managed`、隐藏视图、取自 `userInterfaceLayoutDirection` 的从右到左、按 backing scale 的像素对齐,以及 `FlexInsets.safeArea`。文本框通过它的 cell 按提供的宽度测量,最小宽度规则和 `UILabel` 相同。
+
+它没有 `FlexScrollView`、`FlexGuide`、异步布局和 cell 配置。要滚动就把 `FlexView` 作为 `NSScrollView` 的文档视图,修改状态后调用 `needsLayout = true`。
+
+### 异步布局
+
+`layoutSubviews` 不能等待,所以只做同步测量。当叶子的尺寸确实需要 `await`(后台文字引擎、尺寸还在加载的图片)时,让视图遵循 `AsyncLayoutMeasurable`,然后调用 `layoutAsync()`:
+
+```swift
+final class RemoteImageView: UIImageView, AsyncLayoutMeasurable {
+    func layoutSize(for constraint: MeasureConstraint) async -> CGSize {
+        await loader.pixelSize(of: url)          // 等待期间主 actor 是空闲的
+    }
+}
+
+await flexView.layoutAsync()                     // FlexScrollView 也有,并且会更新 contentSize
+let size = await flexView.sizeThatFitsAsync(CGSize(width: 320, height: .greatestFiniteMagnitude))
+```
+
+- 布局算法本身是同步的,所以会重复计算直到某一轮不再需要新的测量。因此叶子可能被问到最终用不上的尺寸,并且同样的问题必须每次给同样的答案(依据状态回答,不要依赖计数器或时钟)。如果答案始终无法稳定,求解会抛出 `TaffyError.measureDidNotConverge`,布局保持原样。
+- 视图只在主 actor 上被访问。`layoutAsync()` 和 `AsyncLayoutMeasurable.layoutSize(for:)` 是会 `await` 的主 actor 方法;不阻塞的是"等待"这一段。
+- 遵循该协议的视图在 `layoutSubviews` 的普通一遍里仍然会用它的 `sizeThatFits` / `intrinsicContentSize` 当作估计值。让它们返回最近一次已知的尺寸,首帧就会很接近。
+- 在 `ZDLayoutCore` 里,`Leaf(asyncMeasure:)` 和 `LayoutSolver.solveAsync(…)` 不依赖 UIKit 做同样的事。只有同步 `measure` 的叶子会在调用者所在的 actor 上被调用。
+
+这并不会把求解器移出主线程:耗时的是测量,而且 UIKit 的文字测量大多只能在主线程(见上面的取舍)。
+
+### 性能
+
+每遍布局都会重新测量所有叶子(见上面的取舍),所以开销与叶子数量成正比。在 iOS 模拟器(Apple 芯片)的 Release 构建里测一遍 `图标 | 换行标签 | 时间标签` 这样的行:
+
+| 行数 | 叶子数 | 一遍布局 |
+|---|---|---|
+| 10 | 30 | ≈ 1 ms |
+| 50 | 150 | ≈ 4 ms |
+| 100 | 300 | ≈ 12 ms |
+| 250 | 750 | ≈ 27 ms |
+
+约每个叶子 35 µs,所以典型页面(几十个叶子)花几毫秒,一个十来个叶子的 cell 远不到一毫秒的一半。真机比模拟器所在的 Mac 慢,要留余量。很长的列表请用会复用的容器(`UICollectionView`、`UITableView`)加 `FlexContentConfiguration`,它只布局可见的 cell,不要用一个装着几百行的 `FlexScrollView`。
+
+测量发现了什么、做了什么:向 `UILabel` 询问最小宽度时,每遍都要用 `boundingRect` 测量它最长的几个单词,占了约 70% 的时间。现在最宽单词按内容(文字和字体)记住,250 行一遍从 73 ms 降到 27 ms。`UILabel.sizeThatFits` 本身很便宜(UIKit 缓存了文字排版之后,每次询问约 0.3 µs)。引擎内部在 macOS 上每个节点约 9 µs,大部分是把 `Style` 编码过 BoltFFI 边界(`newLeaf` ≈ 3.5 µs,Taffy 自己的工作 ≈ 0.8 µs)。"一次调用建好整棵树"的批量 API 可以去掉大部分,目前还没有必要。
+
+复现:`cd Benchmarks && swift run -c release ZDLayoutBench`(只测求解器,macOS),以及 `TEST_RUNNER_ZDLAYOUT_PERF=1 xcodebuild test -scheme ZDTaffy-Package -configuration Release ENABLE_TESTABILITY=YES -only-testing:ZDLayoutTests/PerformanceReport -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | grep -A8 PERFREPORT`(真实 UIKit 视图)。
 
 ### UIKit 视图如何测量
 

@@ -11,6 +11,8 @@ let package = Package(
         .library(name: "ZDTaffy", targets: ["ZDTaffy"]),
         .library(name: "ZDLayoutCore", targets: ["ZDLayoutCore"]),
         .library(name: "ZDLayout", targets: ["ZDLayout"]),
+        .library(name: "ZDLayoutSwiftUI", targets: ["ZDLayoutSwiftUI"]),
+        .library(name: "ZDLayoutAppKit", targets: ["ZDLayoutAppKit"]),
     ],
     targets: [
         // Produced by scripts/build-xcframework.sh.
@@ -39,6 +41,26 @@ let package = Package(
             name: "ZDLayout",
             dependencies: ["ZDLayoutCore"],
             path: "Sources/ZDLayout"
+        ),
+        // SwiftUI `Layout` adapter (iOS 16 / macOS 13+ APIs, guarded inside).
+        .target(
+            name: "ZDLayoutSwiftUI",
+            dependencies: ["ZDLayoutCore"],
+            path: "Sources/ZDLayoutSwiftUI"
+        ),
+        // AppKit container and NSView adapters. Empty on platforms without AppKit.
+        .target(
+            name: "ZDLayoutAppKit",
+            dependencies: ["ZDLayoutCore"],
+            path: "Sources/ZDLayoutAppKit"
+        ),
+        .testTarget(
+            name: "ZDLayoutAppKitTests",
+            dependencies: ["ZDLayoutAppKit"]
+        ),
+        .testTarget(
+            name: "ZDLayoutSwiftUITests",
+            dependencies: ["ZDLayoutSwiftUI"]
         ),
         .testTarget(
             name: "ZDLayoutTests",

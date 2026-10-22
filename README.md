@@ -84,7 +84,7 @@ swift test
 
 `ZDLayout` is a declarative layout framework for UIKit built on top of `ZDTaffy`. This section records the agreed design and the trade-offs behind it.
 
-**Status:** implemented and tested. `ZDLayoutCore` runs on macOS (`swift test`); `ZDLayout` (`FlexView`, `FlexScrollView`, `UIView` leaves, `FlexContentConfiguration`) is tested on the iOS Simulator, including self-sizing collection view cells. Not done yet: AppKit / SwiftUI adapters. (The debug overlay exists in `DEBUG` builds.)
+**Status:** implemented and tested. `ZDLayoutCore` runs on macOS (`swift test`); `ZDLayout` (`FlexView`, `FlexScrollView`, `UIView` leaves, `FlexContentConfiguration`) is tested on the iOS Simulator, including self-sizing collection view cells. `ZDLayoutSwiftUI` and `ZDLayoutAppKit` are tested on macOS. (The debug overlay exists in `DEBUG` builds.)
 
 ### Goals
 
@@ -97,8 +97,10 @@ swift test
 
 | Target | Depends on | Contents |
 |---|---|---|
-| `ZDLayoutCore` | `ZDTaffy` | Platform-agnostic: node tree, `Style` builders, solver, measure protocol. No UIKit, so `swift test` on macOS covers it. |
-| `ZDLayout` | `ZDLayoutCore`, UIKit | `FlexView`, `FlexScrollView`, DSL, `UIView` adapters, `FlexContentConfiguration`. |
+| `ZDLayoutCore` | `ZDTaffy` | Platform-agnostic: node tree, `Style` builders, solver, measure protocol, guides. No UIKit, so `swift test` on macOS covers it. |
+| `ZDLayout` | `ZDLayoutCore`, UIKit | `FlexView`, `FlexScrollView`, `FlexGuide`, DSL, `UIView` adapters, `FlexContentConfiguration`. |
+| `ZDLayoutSwiftUI` | `ZDLayoutCore`, SwiftUI | `FlexLayout` / `FlexStack` (a SwiftUI `Layout`), `.flexItem`, `.gridItem`. |
+| `ZDLayoutAppKit` | `ZDLayoutCore`, AppKit | `FlexView` and `NSView` adapters for macOS. |
 
 Requirements: Swift 6 language mode, iOS 15+. Everything UIKit-facing is `@MainActor`.
 
@@ -192,6 +194,76 @@ CSS gives every flex item `flex-shrink: 1`. ZDLayout defaults to `0`, like Yoga 
 | CSS default: `shrink` = 1 | Items give up space when the container is too small. | Every fixed-size icon needs `.shrink(0)`, and a column inside a short container squashes its rows (this broke self-sizing cells during development: the content was compressed to the cell's estimated height). |
 
 Rule of thumb: put `.shrink(1)` on the text that should wrap or truncate, and on the containers that hold it.
+
+### SwiftUI
+
+`ZDLayoutSwiftUI` gives SwiftUI the same engine through its `Layout` protocol (iOS 16 / macOS 13+):
+
+```swift
+import ZDLayoutSwiftUI
+
+FlexStack(.row, gap: 12, alignItems: .center) {
+    Circle().frame(width: 40, height: 40)
+    Text("A title that wraps when it has to").flexItem(grow: 1, shrink: 1)
+    Text("12m").foregroundStyle(.secondary)
+}
+
+FlexStack(columns: [.fr(1), .fr(1), .fr(2)], gap: 8) {          // CSS Grid
+    ForEach(items) { ItemView($0) }
+    Banner().gridItem(column: .line(1, span: 3))
+}
+```
+
+- `.flexItem(grow:shrink:basis:alignSelf:margin:)` or `.flexItem { $0.… }` (an `ItemStyle`) sets a child's properties; `.gridItem(column:row:)` places it in a grid.
+- Children are measured with `subview.sizeThatFits(_:)`: the smallest size is proposed as `0` and the ideal size as `nil`, which is how SwiftUI spells them.
+- A SwiftUI container decides its own size. Like an `HStack` holding a `Spacer`, a `FlexStack` with a `grow` child (or `fr` tracks) takes all it is offered along that axis; otherwise it is as large as its content.
+- **Right-to-left is mirrored by SwiftUI itself** for any custom `Layout`, so `FlexLayout` always solves left to right. (The UIKit and AppKit containers, in contrast, solve in the real direction because nobody mirrors them.) Use `leading` / `trailing` edges and they flip as expected.
+- Shrink defaults to `0` here too, so give wrapping text `shrink: 1`.
+
+### AppKit
+
+`ZDLayoutAppKit` is a leaner port of the UIKit layer to `NSView`: `FlexView` (flipped, so the origin is the top-left), any `NSView` as a leaf, `Label` / `Image` / `Box` / `Managed`, hidden views, right-to-left from `userInterfaceLayoutDirection`, backing-scale pixel alignment, and `FlexInsets.safeArea`. Text fields are measured through their cell at the offered width, with the same smallest-width rule as `UILabel`.
+
+It has no `FlexScrollView`, `FlexGuide`, asynchronous layout or cell configuration. Put a `FlexView` in an `NSScrollView` as its document view to scroll, and call `needsLayout = true` after changing state.
+
+### Asynchronous layout
+
+`layoutSubviews` cannot wait, so it only measures synchronously. When a leaf's size genuinely needs `await` (a background text engine, an image whose size is still loading), adopt `AsyncLayoutMeasurable` and call `layoutAsync()`:
+
+```swift
+final class RemoteImageView: UIImageView, AsyncLayoutMeasurable {
+    func layoutSize(for constraint: MeasureConstraint) async -> CGSize {
+        await loader.pixelSize(of: url)          // the main actor is free while this runs
+    }
+}
+
+await flexView.layoutAsync()                     // FlexScrollView has it too, and updates contentSize
+let size = await flexView.sizeThatFitsAsync(CGSize(width: 320, height: .greatestFiniteMagnitude))
+```
+
+- The layout algorithm is synchronous, so it is run again until a pass needs no new measurements. A leaf can therefore be asked about sizes that end up unused, and must answer the same question the same way every time (answer from state, not from a counter or a clock). If the answers never settle, solving throws `TaffyError.measureDidNotConverge` and the layout is left as it was.
+- Views are only touched on the main actor. `layoutAsync()` and `AsyncLayoutMeasurable.layoutSize(for:)` are main-actor methods that `await`; it is the waiting that does not block.
+- A view that adopts the protocol still goes through the ordinary pass in `layoutSubviews`, which uses its `sizeThatFits` / `intrinsicContentSize` as an estimate. Make those return the last known size so the first frame is close.
+- In `ZDLayoutCore`, `Leaf(asyncMeasure:)` and `LayoutSolver.solveAsync(…)` do the same without UIKit. A leaf that only has a synchronous `measure` is called on the caller's actor.
+
+This does not move the solver off the main thread: measuring was the expensive part, and UIKit text measurement is mostly main-thread only (see the trade-off above).
+
+### Performance
+
+Every layout pass measures every leaf again (see the trade-off above), so the cost scales with the number of leaves. Measured in a Release build on the iOS Simulator (Apple silicon), a pass over rows of `icon | wrapping label | time label`:
+
+| Rows | Leaves | One layout pass |
+|---|---|---|
+| 10 | 30 | ≈ 1 ms |
+| 50 | 150 | ≈ 4 ms |
+| 100 | 300 | ≈ 12 ms |
+| 250 | 750 | ≈ 27 ms |
+
+That is about 35 µs per leaf, so a typical screen (tens of leaves) costs a few milliseconds, and a cell of ten leaves well under half of one. A device is slower than the simulator's host; leave headroom. For a very long list use a reusing container (`UICollectionView`, `UITableView`) and `FlexContentConfiguration`, which lays out only visible cells, rather than one `FlexScrollView` with hundreds of rows.
+
+What the measurements found, and what was done about it: asking a `UILabel` for its smallest width meant measuring its longest words with `boundingRect` on every pass, which was ~70% of the time. The widest word is now remembered by content (text and font), which cut a 250-row pass from 73 ms to 27 ms. `UILabel.sizeThatFits` itself is cheap (about 0.3 µs per question once UIKit has cached the text layout). Inside the engine, a node costs about 9 µs on macOS, of which most is encoding a `Style` across the BoltFFI boundary (`newLeaf` ≈ 3.5 µs; Taffy's own work ≈ 0.8 µs). A bulk "build the whole tree in one call" API would remove most of that and has not been needed yet.
+
+Reproduce: `cd Benchmarks && swift run -c release ZDLayoutBench` (solver only, macOS), and `TEST_RUNNER_ZDLAYOUT_PERF=1 xcodebuild test -scheme ZDTaffy-Package -configuration Release ENABLE_TESTABILITY=YES -only-testing:ZDLayoutTests/PerformanceReport -destination 'platform=iOS Simulator,name=iPhone 17' 2>&1 | grep -A8 PERFREPORT` (real UIKit views).
 
 ### How UIKit views are measured
 
