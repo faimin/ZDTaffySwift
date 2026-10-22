@@ -104,7 +104,14 @@ public struct FlexLayout: Layout {
                 (container.rows + container.autoRows).contains(where: \.hasFraction)
             )
         }
-        let growers = subviews.contains { $0[ItemStyleKey.self].grow > 0 && !$0[ItemStyleKey.self].isHidden }
+        // `justifyContent` only means something when there is room to distribute, so anything but `start` also
+        // takes the offered space.
+        let distributes: Bool
+        switch container.justifyContent {
+        case nil, .start?, .flexStart?: distributes = false
+        default: distributes = true
+        }
+        let growers = distributes || subviews.contains { $0[ItemStyleKey.self].grow > 0 && !$0[ItemStyleKey.self].isHidden }
         switch container.axis {
         case .row, .rowReverse: return (growers, false)
         case .column, .columnReverse: return (false, growers)

@@ -59,6 +59,38 @@ struct FlexStackTests {
         #expect(frames[0]?.minX == 0)
     }
 
+    @Test func justifyContentDistributesTheOfferedSpace() {
+        let frames = layOut(width: 200, height: 50) {
+            FlexStack(.row, justifyContent: .spaceBetween) {
+                Color.red.frame(width: 30, height: 20).reportFrame(0)
+                Color.green.frame(width: 30, height: 20).reportFrame(1)
+                Color.blue.frame(width: 30, height: 20).reportFrame(2)
+            }
+        }
+
+        #expect(frames[0]?.minX == 0)
+        #expect(frames[1]?.minX == 85)
+        #expect(frames[2]?.maxX == 200)
+    }
+
+    @Test func centeredContentIsCenteredInTheOfferedSpace() {
+        let frames = layOut(width: 200, height: 50) {
+            FlexStack(.row, justifyContent: .center) {
+                Color.red.frame(width: 40, height: 20).reportFrame(0)
+            }
+        }
+
+        #expect(frames[0]?.minX == 80)
+    }
+
+    @Test func startAlignedContentOnlyTakesWhatItNeeds() {
+        let host = NSHostingView(rootView:
+            FlexStack(.row, justifyContent: .start) { Color.red.frame(width: 40, height: 20) }
+        )
+
+        #expect(host.fittingSize.width == 40)
+    }
+
     @Test func gapAndPaddingAreApplied() {
         let frames = layOut(width: 200, height: 200) {
             FlexStack(.column, gap: 10, padding: Edges(8)) {
