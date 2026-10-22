@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios x86_64-apple-darwin aarch64-apple-darwin
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/boltffi
+            rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install BoltFFI CLI
+        run: command -v boltffi || cargo install boltffi_cli --version 0.31.1 --locked
+
+      - name: Rust tests
+        run: cargo test --manifest-path rust/Cargo.toml
+
+      - name: Build XCFramework
+        run: ./scripts/build-xcframework.sh
+
+      - name: Generated bindings are up to date
+        run: git diff --exit-code -- Sources/
+
+      - name: Swift tests (macOS)
+        run: swift test
+
+      - name: Build for iOS Simulator
+        run: xcodebuild -scheme ZDTaffy -destination 'generic/platform=iOS Simulator' build
