@@ -31,7 +31,7 @@ final class FlexEngine {
     /// The nearest view that forces a direction (the host itself, or an ancestor) decides. `UIView` does not pass
     /// a forced `semanticContentAttribute` down to views created later, such as cells, so walk up to find it;
     /// with none, the system's own resolution applies.
-    private func direction(of host: UIView) -> LayoutDirection {
+    private func direction(of host: UIView) -> FlowDirection {
         var view: UIView? = host
         while let current = view {
             switch current.semanticContentAttribute {
@@ -97,7 +97,7 @@ final class FlexEngine {
         }
     }
 
-    private static func edges(for insets: FlexInsets, host: UIView, direction: LayoutDirection) -> Edges {
+    private static func edges(for insets: FlexInsets, host: UIView, direction: FlowDirection) -> Edges {
         switch insets {
         case .none:
             return .zero

@@ -23,11 +23,11 @@ public struct ProposedSize: Hashable, Sendable {
 
 /// Facts about where the layout will be displayed.
 public struct LayoutEnvironment: Hashable, Sendable {
-    public var direction: LayoutDirection
+    public var direction: FlowDirection
     /// Points are snapped to multiples of `1 / scale`. Pass the screen's scale (1, 2 or 3).
     public var scale: CGFloat
 
-    public init(direction: LayoutDirection = .leftToRight, scale: CGFloat = 1) {
+    public init(direction: FlowDirection = .leftToRight, scale: CGFloat = 1) {
         self.direction = direction
         self.scale = scale
     }

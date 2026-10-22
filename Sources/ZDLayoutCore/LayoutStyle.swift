@@ -169,7 +169,7 @@ extension LayoutStyle {
     private static let defaultStyle = Style()
 
     /// Lowers this style to a `ZDTaffy.Style`, resolving `leading` / `trailing` for `direction`.
-    func resolved(direction: LayoutDirection) -> Style {
+    func resolved(direction: FlowDirection) -> Style {
         var s = Self.defaultStyle
         s.display = switch display {
         case _ where isHidden: .none
@@ -224,13 +224,13 @@ extension LayoutStyle {
 
 private extension Edges {
     /// Maps logical sides to physical ones.
-    func physical(_ direction: LayoutDirection) -> (top: Length, left: Length, bottom: Length, right: Length) {
+    func physical(_ direction: FlowDirection) -> (top: Length, left: Length, bottom: Length, right: Length) {
         direction == .leftToRight
             ? (top, leading, bottom, trailing)
             : (top, trailing, bottom, leading)
     }
 
-    func autoRect(_ direction: LayoutDirection) -> LengthPercentageAutoRect {
+    func autoRect(_ direction: FlowDirection) -> LengthPercentageAutoRect {
         let p = physical(direction)
         return LengthPercentageAutoRect(
             left: p.left.lengthPercentageAuto,
@@ -240,7 +240,7 @@ private extension Edges {
         )
     }
 
-    func rect(_ direction: LayoutDirection) -> LengthPercentageRect {
+    func rect(_ direction: FlowDirection) -> LengthPercentageRect {
         let p = physical(direction)
         return LengthPercentageRect(
             left: p.left.lengthPercentage,

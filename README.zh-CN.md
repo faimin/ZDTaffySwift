@@ -375,13 +375,17 @@ stats.frame                                          // 或者布局后直接读
 
 ### Demo
 
-`Demo/` 是一个小 App(个人资料、网格相册、自适应高度的信息流、设置表单),用来在真实屏幕上检验框架。用 [XcodeGen](https://github.com/yonaskolb/XcodeGen) 生成工程并运行:
+`Demo/` 是一个小 App(个人资料、网格相册、自适应高度的信息流、设置表单,以及一个使用 `FlexStack` 的 SwiftUI 页面),用来在真实屏幕上检验框架。用 [XcodeGen](https://github.com/yonaskolb/XcodeGen) 生成工程并运行:
 
 ```bash
 cd Demo && xcodegen generate && open ZDLayoutDemo.xcodeproj
 ```
 
-启动参数 `-tab 0…3` 和 `-rtl YES` 可以选择页面和从右到左布局,截图时很方便。
+启动参数 `-tab 0…4` 和 `-rtl YES` 可以选择页面和从右到左布局,截图时很方便。
+
+### 与 SwiftUI 同名的类型
+
+`Spacer`、`Grid`、`Label`、`Image` 在这套 DSL 和 SwiftUI 里都存在。在同时 import 了 SwiftUI 和 `ZDLayoutCore` / `ZDLayout` 的文件里,不加限定的用法会有歧义;写成 `ZDLayoutCore.Spacer`(或者把两者放在不同的文件里)。会与 Foundation、SwiftUI 或标准库冲突的类型则改了名:`TaffyDimension`、`NodeLayout`、`FloatSide`、`FlowDirection`(而不是 `LayoutDirection`)。
 
 ### 调试与测试
 

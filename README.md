@@ -375,13 +375,17 @@ stats.frame                                          // or just read it after la
 
 ### Demo
 
-`Demo/` is a small app (profile, grid gallery, self-sizing feed, settings form) that exercises the framework on a real screen. Generate the project with [XcodeGen](https://github.com/yonaskolb/XcodeGen) and run it:
+`Demo/` is a small app (profile, grid gallery, self-sizing feed, settings form, and a SwiftUI page using `FlexStack`) that exercises the framework on a real screen. Generate the project with [XcodeGen](https://github.com/yonaskolb/XcodeGen) and run it:
 
 ```bash
 cd Demo && xcodegen generate && open ZDLayoutDemo.xcodeproj
 ```
 
-Launch arguments `-tab 0…3` and `-rtl YES` pick a screen and right-to-left layout, which is handy for screenshots.
+Launch arguments `-tab 0…4` and `-rtl YES` pick a screen and right-to-left layout, which is handy for screenshots.
+
+### Names that SwiftUI also uses
+
+`Spacer`, `Grid`, `Label` and `Image` exist in both this DSL and SwiftUI. In a file that imports SwiftUI together with `ZDLayoutCore` or `ZDLayout`, an unqualified use is ambiguous; write `ZDLayoutCore.Spacer` (or keep the two in separate files). Types that would clash with Foundation, SwiftUI or the standard library were renamed instead: `TaffyDimension`, `NodeLayout`, `FloatSide`, `FlowDirection` (rather than `LayoutDirection`).
 
 ### Debugging and tests
 

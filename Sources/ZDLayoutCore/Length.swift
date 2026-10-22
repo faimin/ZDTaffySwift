@@ -71,7 +71,7 @@ public struct Edges: Hashable, Sendable {
     public static let auto = Edges(.auto)
 }
 
-public enum LayoutDirection: Hashable, Sendable {
+public enum FlowDirection: Hashable, Sendable {
     case leftToRight
     case rightToLeft
 }
