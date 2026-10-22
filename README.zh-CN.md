@@ -80,6 +80,118 @@ swift test
 | `Tests/ZDTaffyTests/` | Swift Testing 测试 |
 | `scripts/` | XCFramework 构建脚本 |
 
+## ZDLayout(设计中,尚未实现)
+
+`ZDLayout` 是计划在 `ZDTaffy` 之上构建的 UIKit 声明式布局框架。本节记录已经确认的设计和取舍。**下面的 API 只是草案,实现过程中可能调整。**
+
+### 目标
+
+- 布局和视图层级在同一处描述,不再需要手动 `addSubview` / `addChildren` / `markDirty`。
+- 使用强类型的值,而不是 `YGValue`。
+- 参与 UIKit 自己的布局周期(`layoutSubviews`、Auto Layout、self-sizing cell),而不是在旁边另起一套。
+- 由 Taffy 驱动,支持 Flexbox、Block 以及 **CSS Grid**。
+
+### 模块
+
+| Target | 依赖 | 内容 |
+|---|---|---|
+| `ZDLayoutCore` | `ZDTaffy` | 与平台无关:节点树、`Style` 构造、求解器、测量协议。不依赖 UIKit,可在 macOS 上 `swift test`。 |
+| `ZDLayout` | `ZDLayoutCore`、UIKit | `FlexView`、`FlexScrollView`、DSL、`UIView` 适配、`FlexContentConfiguration`。 |
+
+要求:Swift 6 语言模式,iOS 15+。所有面向 UIKit 的 API 都是 `@MainActor`。
+
+### 用法草案
+
+```swift
+import ZDLayout
+
+final class ProfileHeader: FlexView {
+    let avatar = UIImageView()
+    let name = UILabel()
+    let badge = BadgeView()
+
+    init() {
+        super.init {
+            Row(gap: 12, alignItems: .center) {
+                avatar.width(40).height(40)
+                Column(gap: 4) {
+                    name
+                    Row {
+                        Spacer()
+                        badge
+                    }
+                }
+                .grow(1)
+            }
+            .padding(16)
+        }
+    }
+}
+```
+
+- **容器**:`Row`、`Column`、`Flex(direction:wrap:)`、`Grid`,以及 `Spacer`。没有 `ZStack`;需要重叠时给子项加 `.absolute(inset:)`。
+- **叶子**:任何你自己持有的 `UIView` 都可以直接放进 builder。少量薄封装(`Label("text")` 等)会替你创建视图。
+- **修饰符**(`.width`、`.height`、`.size`、`.grow`、`.shrink`、`.basis`、`.margin`、`.padding`、`.absolute(inset:)`、`.gridColumn(_:span:)`、`.style { }` 等)修改的都是同一个值类型 `Style`,它对应 `ZDTaffy.Style`。修饰符没覆盖的属性用 `.style { $0.… }` 设置。
+- **值**:数字就是 point(`.width(100)`);百分比写 `.percent(50)` 或 `50.percent`,有意不提供 `50%` 运算符。公开 API 统一用 `CGFloat`,转成 Taffy 的 `Float` 在内部完成。
+
+```swift
+Grid(columns: [.fixed(80), .fr(1), .fr(2)], rows: [.auto], gap: 8) {
+    icon
+    title.gridColumn(2, span: 2)
+}
+```
+
+Grid 暴露轨道(`.fixed`、`.fr`、`.auto`、`.minmax`、`.repeat`)、`gap`、`autoFlow`,以及按线 / 跨度放置子项。命名区域和命名线不在 DSL 里,用 `.style { $0.gridTemplateAreas = … }` 设置。
+
+### 布局如何触发(你需要做什么)
+
+`FlexView` 是一个 `UIView`,在 `layoutSubviews` 里求解,并实现 `sizeThatFits(_:)` / `intrinsicContentSize`。因此它能用在 Auto Layout、`UIStackView`、self-sizing cell 里,也能配合 `UIView.animate { view.layoutIfNeeded() }` 做动画。
+
+**触发布局的方式和 UIKit 一致:调用 `setNeedsLayout()`**(视图报告的尺寸变化时调用 `invalidateIntrinsicContentSize()`)。没有 `markDirty`,也没有私有的 RunLoop 观察者,请求的合并交给 UIKit。
+
+### 取舍:叶子视图的测量结果不跨布局缓存
+
+`UILabel` 的文本变化时,UIKit 不会通知父级。有两种设计:
+
+| | 行为 | 代价 |
+|---|---|---|
+| **采用:每次布局都重新测量** | 每次布局都对所有叶子调用 `sizeThatFits`,布局的是"当下"的真实状态。 | 每次布局几十次 `sizeThatFits` 调用。 |
+| 显式失效(ZDFlexLayoutKit 的做法) | 叶子尺寸会一直缓存,直到你调用 `markDirty`。 | 忘记 `markDirty` 就悄悄显示旧布局,这是旧库最常见的 bug。 |
+
+由此带来的结果:
+
+- 修改 label 的文字、字体或图片后,调用 `flexView.setNeedsLayout()`(基于 frame 的 UIKit 布局本来就要这样做)。你不需要知道是哪个节点变了。
+- 如果一个页面有几百个叶子,每次布局就要测量几百次。若性能分析显示这是瓶颈,可以加一个按 `(视图, 尺寸约束)` 为键的可选缓存;它不是默认行为,因为"可能过期的缓存"比"慢一点"更糟。
+- 单次布局内部的测量是有记忆的,求解器对同一个叶子问两次同样的问题,只会测量一次。
+- 测量必须是视图当前状态和约束的纯函数。
+
+### 取舍:UIKit 环境语义自动处理
+
+| 方面 | 行为 | 原因 / 需要知道的 |
+|---|---|---|
+| **隐藏视图** | `isHidden == true` 的视图被当作 `display: none`,不占空间(相当于旧库的 `gone`)。每次布局开始时读取。 | 符合最常见的意图。UIKit 里切换 `isHidden` 本身不会触发布局,切换后要调用 `setNeedsLayout()`。想隐藏但保留占位,用 `alpha = 0`。 |
+| **从右到左** | 方向跟随容器的 `effectiveUserInterfaceLayoutDirection`,`leading` / `trailing` 内边距和 `Row` 的顺序自动翻转。 | 除非你真的指物理方向,否则用 `.leading` / `.trailing` 而不是 `.left` / `.right`。 |
+| **像素对齐** | 关闭 Taffy 自带的整数取整,由框架按屏幕 `scale` 对齐(2x 屏 0.5pt 步长,3x 屏 0.333pt)。 | Taffy 取整到整数 point,在 2x / 3x 屏上会模糊或出现缝隙。对齐只在最终结果上做一次,舍入误差不会累积到兄弟节点。 |
+| **安全区** | 默认**不**考虑。在顶层容器上显式开启:`FlexView(insets: .safeArea) { … }` 或 `.layoutMargins`。 | 大多数容器是嵌套的,不能重复加内边距。 |
+
+### 其他决策
+
+| 主题 | 决定 | 没有采用的方案及原因 |
+|---|---|---|
+| 引擎 | `ZDTaffy`(Taffy) | Yoga 没有 Grid / Block;同时抽象两个引擎会让 API 退化到两者的交集。 |
+| 平台 | 首版只做 UIKit。核心不依赖 UIKit,以后可加 AppKit / SwiftUI `Layout` 适配。 | 一开始就做三套,会在核心验证之前把工作量翻三倍。 |
+| 视图所有权 | 视图由你持有,DSL 只描述排布。子项按身份做粗粒度对账(增、删、重排),不做深度 diff。 | React 式的元素树加 diff 是个大工程,还会让框架和已有 UIKit 代码割裂。 |
+| 线程 | 全部在主 actor 上同步求解。求解器本身是不带 actor 隔离的纯函数,以后可以加后台模式。 | 旧库的后台模式需要预测量侧表;UIKit 文本测量大多只能在主线程,收益小、复杂度高。 |
+| 滚动 | `FlexScrollView(axis: .vertical)` 沿主轴不限制尺寸地布局内容,并保持 `contentSize` 同步。 | 手动维护 `contentSize` 是最容易出错的地方。 |
+| Cell | 依赖 UIKit 原生 self-sizing。`FlexContentConfiguration { … }`(一个 `UIContentConfiguration`)让 table / collection 的 cell 直接用 DSL。 | 有了 self-sizing 和 `UIContentConfiguration`,模板 cell 算高度的辅助类已经过时。 |
+| 旧 API | 不提供与 ZDFlexLayoutKit 的兼容层。 | 背负旧 API 会限制新设计。虚拟容器、自动刷新、cell 自适应只作为概念保留。 |
+| Objective-C | 不支持。 | result builder 和泛型没有 ObjC 对应物。 |
+
+### 调试与测试
+
+- `flexView.debugDescription` 打印带 frame 的节点树。给每个节点画边框的调试叠加层只在 `DEBUG` 构建中可用。
+- `ZDLayoutCore` 用 macOS 上的 `swift test` 测试;UIKit 层用 iOS 模拟器上的 `xcodebuild test` 测试。CI 里分成两个 job。
+
 ## 许可
 
 MIT。Taffy 与 BoltFFI 同为 MIT 许可。
