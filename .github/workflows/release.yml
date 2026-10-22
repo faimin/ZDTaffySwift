@@ -1,0 +1,40 @@
+name: Release
+
+# Builds the XCFramework, tags a release commit whose Package.swift points at it, and publishes a GitHub release.
+# Run it from the Actions tab. Nothing is merged into main: the release commit exists only under the tag.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version, without the leading v (for example 0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios x86_64-apple-darwin aarch64-apple-darwin
+
+      - name: Install BoltFFI CLI
+        run: cargo install boltffi_cli --version 0.31.1 --locked
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: ./scripts/release.sh "$VERSION" --publish

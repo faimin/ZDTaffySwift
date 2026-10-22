@@ -9,6 +9,24 @@ Swift bindings for [Taffy](https://github.com/DioxusLabs/taffy) (CSS Block, Flex
 - Complete `Style`: Block, Flexbox and Grid properties (`calc()` is not exposed)
 - Leaf measurement via a `Measure` protocol, a closure, or an `async` closure
 
+## Installation
+
+Add the package and pick the products you need (`ZDTaffy` is the bare Taffy binding; the others are layout frameworks built on it):
+
+```swift
+.package(url: "https://github.com/faimin/ZDTaffySwift", from: "0.1.0")
+```
+
+| Product | For |
+|---|---|
+| `ZDTaffy` | Taffy itself (`TaffyTree`, `Style`) |
+| `ZDLayoutCore` | The platform-agnostic layout model and solver |
+| `ZDLayout` | UIKit |
+| `ZDLayoutSwiftUI` | SwiftUI (`Layout`) |
+| `ZDLayoutAppKit` | AppKit |
+
+A tagged release downloads a prebuilt XCFramework (about 36 MB zipped; linking dead-strips what you do not use). Building from `main` needs Rust: see below.
+
 ## Usage
 
 ```swift
@@ -79,6 +97,17 @@ swift test
 | `Sources/ZDTaffy/` | Hand-written Swift conveniences + generated bindings |
 | `Tests/ZDTaffyTests/` | Swift Testing suites |
 | `scripts/` | XCFramework build script |
+
+### Releasing
+
+`main` points its binary target at the locally built `Artifacts/ZDTaffy.xcframework`. A release builds the framework, zips it and checksums it, then creates a commit that differs from `main` only in the binary target (now the URL of the zip attached to the GitHub release), tags that commit, and publishes the release. The release commit is never merged into `main`.
+
+```bash
+scripts/release.sh 0.2.0              # dry run: build, zip, checksum, write build/release/Package.swift
+scripts/release.sh 0.2.0 --publish    # tag, push the tag and create the GitHub release (needs a clean tree and gh)
+```
+
+The same thing runs from the *Release* workflow in the Actions tab.
 
 ## ZDLayout
 

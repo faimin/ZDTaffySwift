@@ -38,13 +38,20 @@ jobs:
       - name: Generated bindings are up to date
         run: git diff --exit-code -- Sources/
 
-      - name: Swift tests (macOS: ZDTaffy, ZDLayoutCore)
+      - name: "Swift tests (macOS: ZDTaffy, ZDLayoutCore, ZDLayoutSwiftUI, ZDLayoutAppKit)"
         run: swift test
 
-      - name: Swift tests (iOS Simulator: ZDLayout)
+      - name: "Swift tests (iOS Simulator: ZDLayout)"
         run: |
           xcodebuild test -scheme ZDTaffy-Package -only-testing:ZDLayoutTests \
             -destination 'platform=iOS Simulator,name=iPhone 16'
 
       - name: Build for iOS Simulator
         run: xcodebuild -scheme ZDTaffy -destination 'generic/platform=iOS Simulator' build
+
+      - name: Build the demo app
+        run: |
+          brew install xcodegen
+          (cd Demo && xcodegen generate)
+          xcodebuild -project Demo/ZDLayoutDemo.xcodeproj -scheme ZDLayoutDemo \
+            -destination 'generic/platform=iOS Simulator' build

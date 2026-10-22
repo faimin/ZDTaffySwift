@@ -72,3 +72,4 @@ Artifacts/
 Demo/*.xcodeproj
 
 .DS_Store
+build/

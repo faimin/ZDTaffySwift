@@ -1,0 +1,4 @@
+# The static libraries are linked into apps, never LTO-ed again, so the LLVM bitcode that rustc embeds by default is
+# dead weight (it made each slice about 11 MB larger).
+[build]
+rustflags = ["-C", "embed-bitcode=no"]

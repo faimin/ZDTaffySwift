@@ -9,6 +9,24 @@
 - 完整的 `Style`:Block、Flexbox、Grid 全部属性(不暴露 `calc()`)
 - 叶子节点测量:`Measure` 协议、闭包或 `async` 闭包
 
+## 安装
+
+添加这个包,并选择需要的 product(`ZDTaffy` 是 Taffy 本身的绑定,其余是构建在它之上的布局框架):
+
+```swift
+.package(url: "https://github.com/faimin/ZDTaffySwift", from: "0.1.0")
+```
+
+| Product | 用途 |
+|---|---|
+| `ZDTaffy` | Taffy 本身(`TaffyTree`、`Style`) |
+| `ZDLayoutCore` | 与平台无关的布局模型和求解器 |
+| `ZDLayout` | UIKit |
+| `ZDLayoutSwiftUI` | SwiftUI(`Layout`) |
+| `ZDLayoutAppKit` | AppKit |
+
+带 tag 的版本会下载预编译的 XCFramework(压缩后约 36 MB;链接时会裁掉用不到的部分)。从 `main` 构建需要 Rust,见下文。
+
 ## 用法
 
 ```swift
@@ -79,6 +97,17 @@ swift test
 | `Sources/ZDTaffy/` | 手写的 Swift 便利层 + 生成的绑定 |
 | `Tests/ZDTaffyTests/` | Swift Testing 测试 |
 | `scripts/` | XCFramework 构建脚本 |
+
+### 发布
+
+`main` 上的二进制 target 指向本地构建的 `Artifacts/ZDTaffy.xcframework`。发布时会构建 framework,打 zip 并计算校验和,然后生成一个与 `main` 只有二进制 target 不同的提交(改为指向 GitHub Release 附件的 URL),给这个提交打 tag 并发布 Release。这个发布提交不会合并回 `main`。
+
+```bash
+scripts/release.sh 0.2.0              # 演练:构建、打 zip、算校验和、生成 build/release/Package.swift
+scripts/release.sh 0.2.0 --publish    # 打 tag、推送 tag 并创建 GitHub Release(需要干净的工作区和 gh)
+```
+
+在 Actions 页签里运行 *Release* 工作流效果相同。
 
 ## ZDLayout
 
