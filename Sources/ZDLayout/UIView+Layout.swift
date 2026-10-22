@@ -3,6 +3,19 @@ import ObjectiveC
 import UIKit
 import ZDLayoutCore
 
+/// A view that measures asynchronously, e.g. by asking a background text engine or waiting for an image's size.
+///
+/// The method runs on the main actor, so it may read the view freely, and may `await` anything: while it waits the
+/// main actor is free. It is only used by ``FlexView/layoutAsync()`` and the other `async` layout methods; the
+/// ordinary `layoutSubviews` pass cannot wait, so it measures such a view with `sizeThatFits(_:)` /
+/// `intrinsicContentSize` as usual. Make those return a sensible estimate (the last known size is a good one).
+@MainActor
+public protocol AsyncLayoutMeasurable: UIView {
+    /// The content size for `constraint`. Same purity rule as ``LayoutMeasurable``: answer from state, because
+    /// the layout asks again whenever its own result changes the question.
+    func layoutSize(for constraint: MeasureConstraint) async -> CGSize
+}
+
 /// A view that can answer measure questions better than `sizeThatFits(_:)`.
 ///
 /// Plain `UIKit` views are measured with `sizeThatFits(_:)`; adopt this for custom views whose size depends on
@@ -37,6 +50,12 @@ extension UIView {
         return LayoutNode(
             style: style,
             measure: { [self] constraint in MainActor.assumeIsolated { measuredSize(for: constraint) } },
+            asyncMeasure: { @MainActor [self] constraint in
+                if let measurable = self as? AsyncLayoutMeasurable {
+                    return await measurable.layoutSize(for: constraint)
+                }
+                return measuredSize(for: constraint)
+            },
             content: self
         )
     }
@@ -95,11 +114,33 @@ extension UILabel {
     @MainActor
     private func longestWordWidth() -> CGFloat {
         let text = attributedText ?? NSAttributedString(string: self.text ?? "", attributes: [.font: font as Any])
+        return LongestWordCache.width(of: text)
+    }
+}
+
+/// The widest word of a text, remembered by content. A label is asked for its smallest size several times per
+/// layout pass and `boundingRect` on its words dominated the cost of a pass, so this is looked up, not recomputed.
+/// Content-keyed: changing the text or font simply misses.
+@MainActor
+private enum LongestWordCache {
+    private static var widths: [NSAttributedString: CGFloat] = [:]
+    private static let capacity = 2048
+
+    static func width(of text: NSAttributedString) -> CGFloat {
+        if let cached = widths[text] { return cached }
+        let width = measure(text)
+        if widths.count >= capacity { widths.removeAll(keepingCapacity: true) }
+        widths[text] = width
+        return width
+    }
+
+    private static func measure(_ text: NSAttributedString) -> CGFloat {
         let string = text.string as NSString
         var words: [NSRange] = []
         var start: Int?
         for index in 0...string.length {
-            let isSeparator = index == string.length || CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(string.character(at: index)) ?? " ")
+            let isSeparator = index == string.length
+                || CharacterSet.whitespacesAndNewlines.contains(UnicodeScalar(string.character(at: index)) ?? " ")
             if isSeparator {
                 if let begin = start { words.append(NSRange(location: begin, length: index - begin)) }
                 start = nil

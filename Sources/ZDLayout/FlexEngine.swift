@@ -140,7 +140,31 @@ final class FlexEngine {
             assertionFailure("ZDLayout: layout failed")
             return host.bounds.size
         }
+        return apply(root: root, result: result, host: host, origin: origin)
+    }
 
+    /// Like ``layout(children:insets:host:origin:proposed:)``, but leaves that measure asynchronously are awaited,
+    /// so the main actor is free while they work. Everything that touches views still happens on the main actor.
+    @discardableResult
+    func layoutAsync(children: [LayoutNode], insets: FlexInsets, host: UIView, origin: CGPoint, proposed: ProposedSize) async -> CGSize {
+        let environment = environment(for: host)
+        let root = makeRoot(children: children, insets: insets, host: host, environment: environment, pruneUnused: true)
+        guard let result = try? await LayoutSolver.solveAsync(root, in: proposed, sizing: .fill, environment: environment) else {
+            assertionFailure("ZDLayout: layout failed")
+            return host.bounds.size
+        }
+        return apply(root: root, result: result, host: host, origin: origin)
+    }
+
+    func fittingSizeAsync(children: [LayoutNode], insets: FlexInsets, host: UIView, proposed: ProposedSize) async -> CGSize {
+        let environment = environment(for: host)
+        let root = makeRoot(children: children, insets: insets, host: host, environment: environment)
+        guard let result = try? await LayoutSolver.solveAsync(root, in: proposed, sizing: .fit, environment: environment) else { return .zero }
+        return result.frame.size
+    }
+
+    /// Puts a solved layout on screen: mounts views, sets frames, updates guides.
+    private func apply(root: LayoutNode, result: ResolvedLayout, host: UIView, origin: CGPoint) -> CGSize {
         let leaves = root.leaves
         mount(views: leaves.compactMap { $0.content as? UIView }, in: host)
 

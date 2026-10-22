@@ -139,6 +139,26 @@ open class FlexView: UIView, LayoutMeasurable {
         ))
     }
 
+    // MARK: Asynchronous layout
+
+    /// Lays the content out now, awaiting leaves that adopt ``AsyncLayoutMeasurable``.
+    ///
+    /// `layoutSubviews` cannot wait, so a view that needs an asynchronous measurement is laid out with its
+    /// synchronous estimate there. Call this when the real answer matters (e.g. after the data it measures has
+    /// loaded); the main actor is free while the measurements are in flight. Layout invalidations that arrive
+    /// meanwhile still run `layoutSubviews` as usual.
+    public func layoutAsync() async {
+        await engine.layoutAsync(children: body(), insets: insets, host: self, origin: bounds.origin, proposed: ProposedSize(bounds.size))
+    }
+
+    /// The asynchronous counterpart of ``sizeThatFits(_:)``.
+    public func sizeThatFitsAsync(_ size: CGSize) async -> CGSize {
+        await engine.fittingSizeAsync(
+            children: body(), insets: insets, host: self,
+            proposed: ProposedSize(width: proposal(for: size.width), height: proposal(for: size.height))
+        )
+    }
+
     private func fittingSize(_ proposed: ProposedSize) -> CGSize {
         engine.fittingSize(children: body(), insets: insets, host: self, proposed: proposed)
     }

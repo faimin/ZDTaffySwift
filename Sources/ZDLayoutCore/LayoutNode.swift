@@ -9,6 +9,18 @@ public struct MeasureConstraint: Hashable, Sendable {
     public var knownHeight: CGFloat?
     public var availableWidth: AvailableLength
     public var availableHeight: AvailableLength
+
+    public init(
+        knownWidth: CGFloat? = nil,
+        knownHeight: CGFloat? = nil,
+        availableWidth: AvailableLength = .maxContent,
+        availableHeight: AvailableLength = .maxContent
+    ) {
+        self.knownWidth = knownWidth
+        self.knownHeight = knownHeight
+        self.availableWidth = availableWidth
+        self.availableHeight = availableHeight
+    }
 }
 
 /// The space offered along one axis.
@@ -28,11 +40,19 @@ public enum AvailableLength: Hashable, Sendable {
 /// Computes the content size of a leaf. Must be a pure function of the leaf's current state and `constraint`.
 public typealias LeafMeasure = (_ constraint: MeasureConstraint) -> CGSize
 
+/// Like ``LeafMeasure`` but may suspend, for content measured on another actor or from data that is still loading.
+/// Only ``LayoutSolver/solveAsync(_:in:sizing:environment:isolation:)`` uses it. The same purity rule applies, and
+/// more strongly: the solver asks again whenever the layout changes the question, so answer from state, not from
+/// a counter or a clock.
+public typealias AsyncLeafMeasure = (_ constraint: MeasureConstraint) async -> CGSize
+
 /// A node of the layout tree: a style, children, and (for leaves) a way to measure content.
 public struct LayoutNode {
     public var style: LayoutStyle
     public var children: [LayoutNode]
     public var measure: LeafMeasure?
+    /// Preferred over ``measure`` by the asynchronous solver.
+    public var asyncMeasure: AsyncLeafMeasure?
     /// An object the caller associates with the node (a platform view, say). The solver never looks at it.
     public var content: AnyObject?
     /// Told where the node ends up. The solver never looks at it; the host does.
@@ -42,12 +62,14 @@ public struct LayoutNode {
         style: LayoutStyle = LayoutStyle(),
         children: [LayoutNode] = [],
         measure: LeafMeasure? = nil,
+        asyncMeasure: AsyncLeafMeasure? = nil,
         content: AnyObject? = nil,
         guide: LayoutGuide? = nil
     ) {
         self.style = style
         self.children = children
         self.measure = measure
+        self.asyncMeasure = asyncMeasure
         self.content = content
         self.guide = guide
     }
@@ -198,6 +220,12 @@ public struct Leaf: LayoutComponent {
 
     public init(measure: LeafMeasure? = nil) {
         layoutNode = LayoutNode(measure: measure)
+    }
+
+    /// A leaf measured asynchronously. Solving it with the synchronous ``LayoutSolver/solve(_:in:sizing:environment:)``
+    /// gives it no content size.
+    public init(asyncMeasure: @escaping AsyncLeafMeasure) {
+        layoutNode = LayoutNode(asyncMeasure: asyncMeasure)
     }
 }
 

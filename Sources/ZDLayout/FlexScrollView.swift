@@ -82,6 +82,13 @@ open class FlexScrollView: UIScrollView, LayoutMeasurable {
         engine.fittingSize(children: body(), insets: insets, host: self, proposed: scrollingProposal(for: size))
     }
 
+    /// Lays the content out now, awaiting leaves that adopt ``AsyncLayoutMeasurable``, and updates `contentSize`.
+    /// See ``FlexView/layoutAsync()``.
+    public func layoutAsync() async {
+        let size = await engine.layoutAsync(children: body(), insets: insets, host: self, origin: .zero, proposed: scrollingProposal(for: bounds.size))
+        if contentSize != size { contentSize = size }
+    }
+
     public func layoutSize(for constraint: MeasureConstraint) -> CGSize {
         engine.fittingSize(children: body(), insets: insets, host: self, proposed: ProposedSize(
             width: constraint.knownWidth.map { .definite($0) } ?? constraint.availableWidth,

@@ -251,6 +251,33 @@ struct MeasuringTests {
         #expect(text.frame.maxX <= 160)
     }
 
+    @Test func aWrappingLabelsSmallestWidthIsItsLongestWord() {
+        func smallestWidth(_ text: String, font: UIFont) -> CGFloat {
+            let view = FlexView { Label(text, font: font, lines: 0) }
+            let constraint = MeasureConstraint(
+                knownWidth: nil, knownHeight: nil, availableWidth: .minContent, availableHeight: .maxContent
+            )
+            return view.layoutSize(for: constraint).width
+        }
+        let font = UIFont.systemFont(ofSize: 15)
+        let longest = ceil(("unbreakable" as NSString).size(withAttributes: [.font: font]).width)
+
+        #expect(smallestWidth("an unbreakable word in a sentence", font: font) == longest)
+        // Asking again (a cache hit) gives the same answer; other text and other fonts do not reuse it.
+        #expect(smallestWidth("an unbreakable word in a sentence", font: font) == longest)
+        #expect(smallestWidth("tiny words only", font: font) < longest)
+        #expect(smallestWidth("an unbreakable word in a sentence", font: .systemFont(ofSize: 30)) > longest)
+    }
+
+    @Test func aSingleTruncatingLabelCanShrinkToNothing() {
+        let view = FlexView { Label("A long title that may be cut", lines: 1) }
+        let constraint = MeasureConstraint(
+            knownWidth: nil, knownHeight: nil, availableWidth: .minContent, availableHeight: .maxContent
+        )
+
+        #expect(view.layoutSize(for: constraint).width == 0)
+    }
+
     @Test func unconstrainedAndZeroProposalsMeanNoLimit() {
         let text = label("A fairly long single line of text")
         let view = FlexView { text }
@@ -816,6 +843,124 @@ struct GuideTests {
 
         // Content coordinates, regardless of how far the scroll view has been scrolled.
         #expect(guide.frame == CGRect(x: 0, y: 200, width: 200, height: 100))
+    }
+}
+
+/// Measures after a delay, standing in for a view that waits on a background text engine or a loaded image.
+@MainActor
+private final class SlowBox: UIView, AsyncLayoutMeasurable {
+    var answer = CGSize(width: 80, height: 30)
+    var delay: UInt64 = 40_000_000
+
+    func layoutSize(for constraint: MeasureConstraint) async -> CGSize {
+        try? await Task.sleep(nanoseconds: delay)
+        return answer
+    }
+
+    // What the ordinary `layoutSubviews` pass uses: it cannot wait.
+    override var intrinsicContentSize: CGSize { CGSize(width: 5, height: 5) }
+}
+
+@MainActor
+@Suite("Async layout")
+struct AsyncLayoutTests {
+    @Test func layoutAsyncAwaitsAsynchronousMeasures() async {
+        let box = SlowBox()
+        let view = FlexView { Row(alignItems: .start) { box } }
+        view.frame = CGRect(x: 0, y: 0, width: 200, height: 100)
+
+        view.layoutIfNeeded()
+        #expect(box.frame.size == CGSize(width: 5, height: 5))      // the synchronous estimate
+
+        await view.layoutAsync()
+        #expect(box.frame.size == CGSize(width: 80, height: 30))     // the real answer
+    }
+
+    @Test func theMainActorIsFreeWhileMeasuresAreInFlight() async {
+        let box = SlowBox()
+        box.delay = 120_000_000
+        let view = FlexView { Row { box } }
+        view.frame = CGRect(x: 0, y: 0, width: 200, height: 100)
+
+        nonisolated(unsafe) var ticks = 0
+        let ticker = Task { @MainActor in
+            while !Task.isCancelled {
+                ticks += 1
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+        }
+        await view.layoutAsync()
+        ticker.cancel()
+
+        // A blocked main actor would have let the ticker run only once or twice.
+        #expect(ticks > 5)
+        #expect(box.frame.size == CGSize(width: 80, height: 30))
+    }
+
+    @Test func ordinaryContentLaysOutTheSameAsynchronously() async {
+        func make() -> FlexView {
+            let text = "The quick brown fox jumps over the lazy dog, twice, to be sure."
+            let view = FlexView {
+                Column(gap: 6) {
+                    Row(gap: 8, alignItems: .center) { Box(color: .red, id: "a").size(32); Label(text).grow(1).shrink(1) }
+                    Label("Footer", lines: 1)
+                }
+                .padding(12)
+            }
+            view.frame = CGRect(x: 0, y: 0, width: 240, height: 300)
+            return view
+        }
+        let sync = make()
+        sync.layoutIfNeeded()
+        let async = make()
+        await async.layoutAsync()
+
+        #expect(async.subviews.map(\.frame) == sync.subviews.map(\.frame))
+        #expect(async.subviews.count == 3)
+    }
+
+    @Test func sizeThatFitsAsyncMatchesTheSynchronousAnswer() async {
+        let view = FlexView {
+            Column { Label("A fairly long line of text that wraps when it has to", lines: 0).shrink(1) }
+        }
+        let proposal = CGSize(width: 150, height: CGFloat.greatestFiniteMagnitude)
+
+        let expected = view.sizeThatFits(proposal)
+        let actual = await view.sizeThatFitsAsync(proposal)
+
+        #expect(actual == expected)
+    }
+
+    @Test func scrollViewsUpdateContentSizeAsynchronously() async {
+        let box = SlowBox()
+        box.answer = CGSize(width: 100, height: 400)
+        let scroll = FlexScrollView { Column(alignItems: .start) { box } }
+        scroll.frame = CGRect(x: 0, y: 0, width: 200, height: 300)
+
+        scroll.layoutIfNeeded()
+        #expect(scroll.contentSize.height == 5)
+
+        await scroll.layoutAsync()
+        #expect(scroll.contentSize == CGSize(width: 200, height: 400))
+        #expect(box.frame.size == CGSize(width: 100, height: 400))
+    }
+
+    @Test func asynchronousAndOrdinaryViewsMixInOneRow() async {
+        let box = SlowBox()
+        let plain = UIView()
+        let view = FlexView {
+            Row(gap: 10, alignItems: .start) {
+                plain.size(20, 20)
+                box
+                Label("end", lines: 1)
+            }
+        }
+        view.frame = CGRect(x: 0, y: 0, width: 300, height: 100)
+        await view.layoutAsync()
+
+        #expect(plain.frame == CGRect(x: 0, y: 0, width: 20, height: 20))
+        #expect(box.frame == CGRect(x: 30, y: 0, width: 80, height: 30))
+        #expect(view.subviews.compactMap { $0 as? UILabel }.first?.frame.minX == 120)
     }
 }
 #endif
