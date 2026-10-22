@@ -60,3 +60,10 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Rust / BoltFFI build output
+rust/target/
+rust/dist/
+
+# Built by scripts/build-xcframework.sh (the generated Swift and C shim ARE committed)
+Artifacts/

@@ -1,0 +1,4 @@
+module ZDTaffyFFI {
+    header "ffi.h"
+    export *
+}
