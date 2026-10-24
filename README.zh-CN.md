@@ -333,6 +333,33 @@ Managed<UISwitch>(id: "notifications", make: { UISwitch() }) { $0.isOn = isOn }
 
 `Label` 默认会换行;要让它在其他视图旁边换行或截断,加 `.shrink(1)`。
 
+### CALayer
+
+`CALayer` 和视图一样是叶子:放进同一个描述里,用同样的修饰符,视图和图层按书写顺序叠放。适合只负责绘制(渐变、形状、文字)、不需要触摸处理、trait 变化或 autoresizing 的内容,不用创建 `UIView`。
+
+```swift
+let divider = CALayer()                                  // 你自己持有的图层
+
+FlexView {
+    Column(gap: 8) {
+        ManagedLayer<CAGradientLayer>(id: "banner", make: { CAGradientLayer() }) {
+            $0.colors = [UIColor.systemIndigo.cgColor, UIColor.systemPink.cgColor]
+        }
+        .height(8)                                       // 图层自己没有尺寸
+        TextLayer("A paragraph drawn by a CATextLayer", font: .preferredFont(forTextStyle: .subheadline))
+        divider.height(1)
+    }
+}
+```
+
+- **尺寸。** 普通图层没有固有尺寸:用 `.size(…)`、`.height(…)` 或 `.grow(…)` 给它,或者让图层遵循 `LayerMeasurable`。有意不使用 `CALayer.preferredFrameSize()`:它只是回传图层当前的 `bounds`(图层会拿上一次布局的结果当自己的尺寸),而 `CAShapeLayer` 返回 0。
+- **所有权。** 传入你自己持有的图层,或者用 `ManagedLayer<L>(id:make:update:)` 描述一个,它的缓存和复用方式与 `Managed` 完全相同(按 `id`,否则按同类型无名描述中的位置;描述不再提到就会被移除)。
+- **`TextLayer(text, font:color:wraps:alignment:id:)`** 是唯一的内置包装,因为测量文字并不简单:它按提供的宽度换行,或者用 `wraps: false` 保持单行并截断(此时可以收缩到 0)。`CATextLayer` 没有最大行数,所以没有 `lines:` 参数。它使用你传入的 `UIFont`(包括系统字体),`contentsScale` 会自动设为屏幕的 scale,文字才清晰。
+- **没有隐式动画。** 设置 frame 时关闭了 Core Animation 的 action,否则每次布局图层都会滑动 0.25 秒。想要动画请显式地做。
+- **层叠。** 图层和视图完全按书写顺序交错。写在最前面的图层位于它后面的视图之下。
+- **自动处理。** `isHidden` 不占空间(每遍重新读取);非恒等 `transform` 的图层通过 `bounds` 和 `position` 摆放,布局盒子不会移动;考虑 `anchorPoint`;界面风格变化时动态颜色会重新解析;描述不再提到的图层会从宿主里移除。
+- 仅 UIKit(`ZDLayout`);AppKit 层没有图层叶子。
+
 ### 虚拟容器
 
 `Row`、`Column`、`Flex`、`Grid`、`Spacer` 只是布局节点,从不创建 `UIView`:无论描述嵌套多深,视图层级里只有叶子。这正是其他框架里 `UILayoutGuide` / ZDFlexLayoutKit 的 `ZDFlexLayoutDiv` 的用途。

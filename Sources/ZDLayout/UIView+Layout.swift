@@ -37,7 +37,7 @@ extension UIView: LayoutComponent {
 }
 
 /// Carries a non-`Sendable` value out of `MainActor.assumeIsolated`. It never leaves the main thread.
-private struct MainThreadBox<Value>: @unchecked Sendable {
+struct MainThreadBox<Value>: @unchecked Sendable {
     let value: Value
     init(_ value: Value) { self.value = value }
 }
@@ -139,7 +139,7 @@ extension UILabel {
 /// layout pass and `boundingRect` on its words dominated the cost of a pass, so this is looked up, not recomputed.
 /// Content-keyed: changing the text or font simply misses.
 @MainActor
-private enum LongestWordCache {
+enum LongestWordCache {
     enum Text: Hashable {
         case plain(String, UIFont)
         case attributed(NSAttributedString)

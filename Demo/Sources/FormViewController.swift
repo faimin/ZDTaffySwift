@@ -25,6 +25,21 @@ final class FormViewController: UIViewController {
             for (index, title) in ["Notifications", "Background refresh", "A setting with a rather long title that has to wrap"].enumerated() {
                 row(title, id: "row\(index)", isOn: index != 1) { _ in }
             }
+            section("Layers")
+            // A gradient and a paragraph drawn as plain layers: no UIView for either.
+            ManagedLayer<CAGradientLayer>(id: "banner", make: { CAGradientLayer() }) { layer in
+                layer.colors = [UIColor.systemIndigo.cgColor, UIColor.systemPink.cgColor, UIColor.systemOrange.cgColor]
+                layer.startPoint = CGPoint(x: 0, y: 0.5)
+                layer.endPoint = CGPoint(x: 1, y: 0.5)
+                layer.cornerRadius = 5
+            }
+            .height(10)
+            TextLayer(
+                "This paragraph is a CATextLayer: it wraps to the width it is given and takes part in the layout like any other leaf.",
+                font: .preferredFont(forTextStyle: .subheadline),
+                color: .secondaryLabel,
+                id: "layerText"
+            )
             if showsFooter {
                 Label("Footer — hidden with the switch above, and the space it took goes with it.", font: .preferredFont(forTextStyle: .footnote), color: .secondaryLabel)
                     .shrink(1)

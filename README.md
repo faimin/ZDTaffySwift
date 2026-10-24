@@ -333,6 +333,33 @@ Managed<UISwitch>(id: "notifications", make: { UISwitch() }) { $0.isOn = isOn }
 
 `Label` wraps by default; give it `.shrink(1)` to make it wrap or truncate beside other views.
 
+### CALayer
+
+A `CALayer` is a leaf like a view: it goes into the same description, takes the same modifiers, and views and layers stack in the order they are written. Use layers for things that only draw (gradients, shapes, text) and need no touch handling, trait changes or autoresizing; there is no `UIView` to create.
+
+```swift
+let divider = CALayer()                                  // a layer you own
+
+FlexView {
+    Column(gap: 8) {
+        ManagedLayer<CAGradientLayer>(id: "banner", make: { CAGradientLayer() }) {
+            $0.colors = [UIColor.systemIndigo.cgColor, UIColor.systemPink.cgColor]
+        }
+        .height(8)                                       // a layer has no size of its own
+        TextLayer("A paragraph drawn by a CATextLayer", font: .preferredFont(forTextStyle: .subheadline))
+        divider.height(1)
+    }
+}
+```
+
+- **Sizing.** A plain layer has no intrinsic size: give it `.size(…)`, `.height(…)` or `.grow(…)`, or make the layer conform to `LayerMeasurable`. `CALayer.preferredFrameSize()` is deliberately not used: it echoes the layer's current `bounds` (so a layer would size itself from its last layout), and `CAShapeLayer` reports zero.
+- **Ownership.** Pass a layer you own, or describe one with `ManagedLayer<L>(id:make:update:)`, which is cached and reused exactly like `Managed` (by `id`, or by position among un-named descriptions of the same type; dropped when the description stops mentioning it).
+- **`TextLayer(text, font:color:wraps:alignment:id:)`** is the one built-in wrapper, because measuring text is not trivial: it wraps to the width it is offered, or with `wraps: false` stays on one line and truncates (and may then shrink to nothing). `CATextLayer` has no maximum line count, so there is no `lines:`. Its font is the `UIFont` you pass (system fonts included), and `contentsScale` is set to the screen's scale automatically so the text is sharp.
+- **No implicit animations.** Frames are set with Core Animation's actions disabled; otherwise every layout would slide the layers for 0.25 s. Animate explicitly if you want it.
+- **Stacking.** Layers and views interleave exactly as written. A layer written first sits below the views after it.
+- **Handled for you.** `isHidden` takes no space (re-read every pass); a layer with a non-identity `transform` is placed by `bounds` and `position`, so its layout box does not move; `anchorPoint` is accounted for; dynamic colours are resolved again when the interface style changes; a layer the description drops is removed from the host.
+- UIKit only (`ZDLayout`); the AppKit layer does not have layer leaves.
+
 ### Virtual containers
 
 `Row`, `Column`, `Flex`, `Grid` and `Spacer` are layout nodes only: they never create a `UIView`, so the view hierarchy contains just the leaves, however deeply the description nests. This is what `UILayoutGuide` / ZDFlexLayoutKit's `ZDFlexLayoutDiv` are used for elsewhere.

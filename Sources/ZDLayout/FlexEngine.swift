@@ -17,7 +17,9 @@ public enum FlexInsets: Hashable, Sendable {
 @MainActor
 final class FlexEngine {
     private var managed: [ObjectIdentifier: UIView] = [:]
+    private var managedLayers: [ObjectIdentifier: CALayer] = [:]
     private var created: [CreatedKey: UIView] = [:]
+    private var createdLayers: [CreatedKey: CALayer] = [:]
     private(set) var lastRoot: LayoutNode?
     private(set) var lastResult: ResolvedLayout?
 
@@ -48,35 +50,53 @@ final class FlexEngine {
         let type: ObjectIdentifier
     }
 
-    /// Replaces descriptions of framework-created views with the views themselves, reusing cached ones.
-    /// `pruneUnused` drops cached views the description no longer mentions (only a real layout pass may do that).
+    /// Replaces descriptions of framework-created views and layers with the real thing, reusing cached ones.
+    /// `pruneUnused` drops cached ones the description no longer mentions (only a real layout pass may do that).
     private func resolveCreatedViews(in children: [LayoutNode], pruneUnused: Bool) -> [LayoutNode] {
         var positions: [ObjectIdentifier: Int] = [:]
         var used = Set<CreatedKey>()
+        var usedLayers = Set<CreatedKey>()
+
+        func key(id: AnyHashable?, typeID: ObjectIdentifier) -> CreatedKey {
+            let identity: AnyHashable
+            if let id {
+                identity = AnyHashable(NamedIdentity(id: id))
+            } else {
+                let position = positions[typeID, default: 0]
+                positions[typeID] = position + 1
+                identity = AnyHashable(position)
+            }
+            return CreatedKey(identity: identity, type: typeID)
+        }
 
         let resolved = children.map { child in
             child.mapped { node in
-                guard let spec = node.content as? ManagedViewSpec else { return }
-                let identity: AnyHashable
-                if let id = spec.id {
-                    identity = AnyHashable(NamedIdentity(id: id))
-                } else {
-                    let position = positions[spec.typeID, default: 0]
-                    positions[spec.typeID] = position + 1
-                    identity = AnyHashable(position)
-                }
-                let key = CreatedKey(identity: identity, type: spec.typeID)
-                let view = created[key] ?? spec.make()
-                created[key] = view
-                used.insert(key)
-                spec.update(view)
+                if let spec = node.content as? ManagedViewSpec {
+                    let key = key(id: spec.id, typeID: spec.typeID)
+                    let view = created[key] ?? spec.make()
+                    created[key] = view
+                    used.insert(key)
+                    spec.update(view)
 
-                // Keep the style the modifiers set; take measuring and the view from a regular view leaf.
-                let leaf = view.layoutNode
-                node = LayoutNode(style: node.style, children: [], measure: leaf.measure, content: view, guide: node.guide)
+                    // Keep the style the modifiers set; take measuring and the view from a regular view leaf.
+                    let leaf = view.layoutNode
+                    node = LayoutNode(style: node.style, children: [], measure: leaf.measure, content: view, guide: node.guide)
+                } else if let spec = node.content as? ManagedLayerSpec {
+                    let key = key(id: spec.id, typeID: spec.typeID)
+                    let layer = createdLayers[key] ?? spec.make()
+                    createdLayers[key] = layer
+                    usedLayers.insert(key)
+                    spec.update(layer)
+
+                    let leaf = layer.layoutNode
+                    node = LayoutNode(style: node.style, children: [], measure: leaf.measure, content: layer, guide: node.guide)
+                }
             }
         }
-        if pruneUnused { created = created.filter { used.contains($0.key) } }
+        if pruneUnused {
+            created = created.filter { used.contains($0.key) }
+            createdLayers = createdLayers.filter { usedLayers.contains($0.key) }
+        }
         return resolved
     }
 
@@ -94,6 +114,7 @@ final class FlexEngine {
         // A hidden view takes no space, like `display: none`; the flag is read afresh every pass.
         return root.mapped { node in
             if let view = node.content as? UIView, view.isHidden { node.style.isHidden = true }
+            if let layer = node.content as? CALayer, layer.isHidden { node.style.isHidden = true }
         }
     }
 
@@ -163,19 +184,39 @@ final class FlexEngine {
         return result.frame.size
     }
 
-    /// Puts a solved layout on screen: mounts views, sets frames, updates guides.
+    /// Puts a solved layout on screen: mounts views and layers, sets frames, updates guides.
     private func apply(root: LayoutNode, result: ResolvedLayout, host: UIView, origin: CGPoint) -> CGSize {
         let leaves = root.leaves
-        mount(views: leaves.compactMap { $0.content as? UIView }, in: host)
+        // Layers added or moved here would otherwise slide into place with Core Animation's implicit 0.25s animation.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
 
+        mount(leaves: leaves.compactMap { $0.content }, in: host)
+
+        let scale = environment(for: host).scale
         for (node, resolved) in zip(leaves, result.leaves) {
-            guard let view = node.content as? UIView, !view.isHidden else { continue }
             let frame = resolved.absoluteFrame.offsetBy(dx: origin.x, dy: origin.y)
-            if view.transform == .identity {
-                view.frame = frame
-            } else {
-                view.bounds = CGRect(origin: view.bounds.origin, size: frame.size)
-                view.center = CGPoint(x: frame.midX, y: frame.midY)
+            if let view = node.content as? UIView, !view.isHidden {
+                if view.transform == .identity {
+                    view.frame = frame
+                } else {
+                    view.bounds = CGRect(origin: view.bounds.origin, size: frame.size)
+                    view.center = CGPoint(x: frame.midX, y: frame.midY)
+                }
+            } else if let layer = node.content as? CALayer, !layer.isHidden {
+                if CATransform3DIsIdentity(layer.transform) {
+                    layer.frame = frame
+                } else {
+                    // `frame` is not meaningful under a transform; place the untransformed box instead.
+                    layer.bounds = CGRect(origin: layer.bounds.origin, size: frame.size)
+                    layer.position = CGPoint(
+                        x: frame.minX + layer.anchorPoint.x * frame.width,
+                        y: frame.minY + layer.anchorPoint.y * frame.height
+                    )
+                }
+                // Layers that draw text are blurry unless they render at the screen's scale.
+                if layer is CATextLayer, layer.contentsScale != scale { layer.contentsScale = scale }
             }
         }
 
@@ -275,23 +316,62 @@ final class FlexEngine {
         }
     }
 
-    /// Adds new views, removes the ones that disappeared and keeps managed views in description order.
-    private func mount(views: [UIView], in host: UIView) {
+    /// Adds new views and layers, removes the ones that disappeared and keeps them in description order.
+    ///
+    /// `leaves` holds `UIView`s and `CALayer`s in the order they were written. Views are ordered through
+    /// `subviews`; standalone layers are then slotted into `sublayers` just above whatever came before them.
+    private func mount(leaves: [AnyObject], in host: UIView) {
         var seen = Set<ObjectIdentifier>()
-        let desired = views.filter { seen.insert(ObjectIdentifier($0)).inserted }
+        let unique = leaves.filter { seen.insert(ObjectIdentifier($0)).inserted }
+        let views = unique.compactMap { $0 as? UIView }
+        let layers = unique.compactMap { $0 as? CALayer }
 
         for (id, view) in managed where !seen.contains(id) {
             if view.superview === host { view.removeFromSuperview() }
         }
-        managed = Dictionary(uniqueKeysWithValues: desired.map { (ObjectIdentifier($0), $0) })
+        for (id, layer) in managedLayers where !seen.contains(id) {
+            if layer.superlayer === host.layer { layer.removeFromSuperlayer() }
+        }
+        managed = Dictionary(uniqueKeysWithValues: views.map { (ObjectIdentifier($0), $0) })
+        managedLayers = Dictionary(uniqueKeysWithValues: layers.map { (ObjectIdentifier($0), $0) })
 
-        for view in desired where view.superview !== host {
+        for view in views where view.superview !== host {
             host.addSubview(view)
         }
+        let currentViews = host.subviews.filter { managed[ObjectIdentifier($0)] != nil }
+        if currentViews != views {
+            views.forEach { host.bringSubviewToFront($0) }
+        }
 
-        let current = host.subviews.filter { managed[ObjectIdentifier($0)] != nil }
-        if current != desired {
-            desired.forEach { host.bringSubviewToFront($0) }
+        for layer in layers where layer.superlayer !== host.layer {
+            host.layer.addSublayer(layer)
+        }
+        interleave(unique, in: host)
+    }
+
+    /// Makes the relative order of the managed layers in `host.layer.sublayers` match the description, which is
+    /// where views and standalone layers meet: a view's layer sits wherever `subviews` put it, so only standalone
+    /// layers are moved.
+    private func interleave(_ unique: [AnyObject], in host: UIView) {
+        let order: [CALayer] = unique.map { ($0 as? UIView)?.layer ?? ($0 as! CALayer) }
+        let wanted = Set(order.map(ObjectIdentifier.init))
+        let current = (host.layer.sublayers ?? []).filter { wanted.contains(ObjectIdentifier($0)) }
+        guard current != order else { return }
+
+        let standalone = Set(managedLayers.keys)
+        var anchor: CALayer?
+        for layer in order {
+            if standalone.contains(ObjectIdentifier(layer)) {
+                layer.removeFromSuperlayer()
+                if let anchor {
+                    host.layer.insertSublayer(layer, above: anchor)
+                } else if let firstViewLayer = order.first(where: { !standalone.contains(ObjectIdentifier($0)) }) {
+                    host.layer.insertSublayer(layer, below: firstViewLayer)
+                } else {
+                    host.layer.insertSublayer(layer, at: 0)
+                }
+            }
+            anchor = layer
         }
     }
 
@@ -310,6 +390,8 @@ final class FlexEngine {
         let name: String
         if let view = node.content as? UIView {
             name = String(describing: type(of: view))
+        } else if let layer = node.content as? CALayer {
+            name = String(describing: type(of: layer))
         } else {
             name = node.style.display == .grid ? "Grid" : "Flex \(node.style.axis)"
         }

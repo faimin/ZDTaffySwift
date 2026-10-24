@@ -99,6 +99,10 @@ open class FlexView: UIView, LayoutMeasurable {
             invalidateIntrinsicContentSize()
             setNeedsLayout()
         }
+        // Layers keep the `CGColor` they were given, so a dynamic colour needs resolving again in the new style.
+        if traitCollection.userInterfaceStyle != previousTraitCollection?.userInterfaceStyle {
+            setNeedsLayout()
+        }
     }
 
     open override func layoutMarginsDidChange() {
