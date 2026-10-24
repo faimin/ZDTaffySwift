@@ -68,6 +68,18 @@ struct FlexTests {
         #expect(result.children[1].frame.size == CGSize(width: 30, height: 15))
     }
 
+    @Test func edgesAcceptCGFloatValues() throws {
+        let inset: CGFloat = 7
+        let root = Row { Leaf().size(10, 10) }
+            .padding(Edges(inset))
+            .margin(Edges(horizontal: inset, vertical: 0))
+            .size(100, 100)
+
+        #expect(root.style.padding == Edges(7))
+        #expect(root.style.margin == Edges(horizontal: 7, vertical: 0))
+        #expect(Edges(top: inset) == Edges(top: 7, leading: 0, bottom: 0, trailing: 0))
+    }
+
     @Test func percentAndLiteralPointsResolve() throws {
         let root = Row {
             Leaf().width(.percent(25)).height(10)

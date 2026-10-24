@@ -67,6 +67,22 @@ public struct Edges: Hashable, Sendable {
         self.init(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
     }
 
+    // `CGFloat` values, the usual UIKit currency. Disfavoured so number literals keep resolving to ``Length``.
+    @_disfavoredOverload
+    public init(top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0) {
+        self.init(top: .points(top), leading: .points(leading), bottom: .points(bottom), trailing: .points(trailing))
+    }
+
+    @_disfavoredOverload
+    public init(_ all: CGFloat) {
+        self.init(.points(all))
+    }
+
+    @_disfavoredOverload
+    public init(horizontal: CGFloat = 0, vertical: CGFloat = 0) {
+        self.init(horizontal: .points(horizontal), vertical: .points(vertical))
+    }
+
     public static let zero = Edges(0)
     public static let auto = Edges(.auto)
 }
