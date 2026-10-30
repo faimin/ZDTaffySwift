@@ -8,7 +8,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
 async-trait = "0.1.92"
-boltffi = "=0.32.0"
+boltffi = "=0.32.1"
 taffy = "0.15.1"
 
 [profile.release]

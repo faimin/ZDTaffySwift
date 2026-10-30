@@ -28,7 +28,7 @@ jobs:
 
       - name: Install BoltFFI CLI
         # A cache restored through the fallback key may hold an older CLI, so check the version, not just presence.
-        run: boltffi --version 2>/dev/null | grep -qx 'boltffi 0.32.0' || cargo install boltffi_cli --version 0.32.0 --locked --force
+        run: boltffi --version 2>/dev/null | grep -qx 'boltffi 0.32.1' || cargo install boltffi_cli --version 0.32.1 --locked --force
 
       - name: Rust tests
         run: cargo test --manifest-path rust/Cargo.toml

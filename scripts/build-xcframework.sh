@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
 command -v cargo >/dev/null || { echo "error: cargo not found" >&2; exit 1; }
-command -v boltffi >/dev/null || { echo "error: boltffi not found (cargo install boltffi_cli --version 0.32.0)" >&2; exit 1; }
+command -v boltffi >/dev/null || { echo "error: boltffi not found (cargo install boltffi_cli --version 0.32.1)" >&2; exit 1; }
 
 PROFILE_FLAG="--release"
 [[ "${1:-}" == "--debug" ]] && PROFILE_FLAG=""
