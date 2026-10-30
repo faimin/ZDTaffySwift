@@ -4,7 +4,7 @@
 
 使用 [BoltFFI](https://github.com/boltffi/boltffi) 为 [Taffy](https://github.com/DioxusLabs/taffy)(Rust 实现的 CSS Block / Flexbox / Grid 布局引擎)生成的 Swift 桥接层,面向 Apple 平台。
 
-- Taffy `0.15.0`,BoltFFI `0.31.1`
+- Taffy `0.15.1`,BoltFFI `0.32.0`
 - iOS 15+、macOS 13+(真机与模拟器切片,`arm64` 与 `x86_64`)
 - 完整的 `Style`:Block、Flexbox、Grid 全部属性(不暴露 `calc()`)
 - 叶子节点测量:`Measure` 协议、闭包或 `async` 闭包
@@ -83,7 +83,7 @@ try await tree.computeLayoutAsync(root: root, available: .maxContent) { node, kn
 
 ```bash
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin x86_64-apple-darwin
-cargo install boltffi_cli --version 0.31.1
+cargo install boltffi_cli --version 0.32.0
 
 ./scripts/build-xcframework.sh   # 生成 Artifacts/ZDTaffy.xcframework 并刷新生成的 Swift 代码
 swift test

@@ -161,6 +161,7 @@ impl Core {
 }
 
 /// A tree of layout nodes. Safe to share between threads; calls are serialized internally.
+#[export]
 pub struct TaffyTree {
     inner: Mutex<Core>,
 }

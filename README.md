@@ -4,7 +4,7 @@
 
 Swift bindings for [Taffy](https://github.com/DioxusLabs/taffy) (CSS Block, Flexbox and Grid layout in Rust) on Apple platforms, generated with [BoltFFI](https://github.com/boltffi/boltffi).
 
-- Taffy `0.15.0`, BoltFFI `0.31.1`
+- Taffy `0.15.1`, BoltFFI `0.32.0`
 - iOS 15+, macOS 13+ (device and simulator slices, `arm64` and `x86_64`)
 - Complete `Style`: Block, Flexbox and Grid properties (`calc()` is not exposed)
 - Leaf measurement via a `Measure` protocol, a closure, or an `async` closure
@@ -83,7 +83,7 @@ Requires Xcode 16+, Rust (stable) with the Apple targets and the BoltFFI CLI:
 
 ```bash
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin x86_64-apple-darwin
-cargo install boltffi_cli --version 0.31.1
+cargo install boltffi_cli --version 0.32.0
 
 ./scripts/build-xcframework.sh   # builds Artifacts/ZDTaffy.xcframework and refreshes the generated Swift
 swift test

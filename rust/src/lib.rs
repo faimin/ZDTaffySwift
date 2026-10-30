@@ -1,5 +1,7 @@
 //! Swift bridge for [Taffy](https://github.com/DioxusLabs/taffy), exported with BoltFFI.
 
+boltffi::scaffolding!();
+
 mod geometry;
 mod grid;
 mod solve;

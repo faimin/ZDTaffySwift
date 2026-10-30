@@ -13,155 +13,43 @@ public struct FfiError: Error {
     }
 }
 
-/// Identifies a node inside a [`TaffyTree`](crate::TaffyTree).
-public struct NodeId: Hashable, Equatable, Sendable {
-    public var raw: UInt64
+/// Used for `align-content` and `justify-content`.
+public struct AlignContent: Hashable, Equatable, Sendable {
+    public var keyword: AlignContentKeyword
+    public var safety: AlignmentSafety
 
-    public init(raw: UInt64) {
-        self.raw = raw
+    public init(keyword: AlignContentKeyword, safety: AlignmentSafety) {
+        self.keyword = keyword
+        self.safety = safety
     }
 
-    @usableFromInline init(fromC c: ___NodeId) {
-        self.init(raw: c.raw)
-    }
-
-    @usableFromInline var cValue: ___NodeId {
-        ___NodeId(raw: raw)
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> NodeId {
-        NodeId(raw: reader.readU64())
+    @inlinable static func decode(from reader: inout WireReader) -> AlignContent {
+        AlignContent(keyword: AlignContentKeyword(rawValue: reader.readI32())!, safety: AlignmentSafety(rawValue: reader.readI32())!)
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeU64(self.raw)
+        writer.writeI32(self.keyword.rawValue)
+        writer.writeI32(self.safety.rawValue)
     }
 }
 
-public struct Size: Hashable, Equatable, Sendable {
-    public var width: Float
-    public var height: Float
+/// Used for `align-items`, `justify-items`, `align-self` and `justify-self`.
+public struct AlignItems: Hashable, Equatable, Sendable {
+    public var keyword: AlignItemsKeyword
+    public var safety: AlignmentSafety
 
-    public init(width: Float, height: Float) {
-        self.width = width
-        self.height = height
+    public init(keyword: AlignItemsKeyword, safety: AlignmentSafety) {
+        self.keyword = keyword
+        self.safety = safety
     }
 
-    @usableFromInline init(fromC c: ___Size) {
-        self.init(width: c.width, height: c.height)
-    }
-
-    @usableFromInline var cValue: ___Size {
-        ___Size(width: width, height: height)
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> Size {
-        Size(width: reader.readF32(), height: reader.readF32())
+    @inlinable static func decode(from reader: inout WireReader) -> AlignItems {
+        AlignItems(keyword: AlignItemsKeyword(rawValue: reader.readI32())!, safety: AlignmentSafety(rawValue: reader.readI32())!)
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeF32(self.width)
-        writer.writeF32(self.height)
-    }
-}
-
-public struct Point: Hashable, Equatable, Sendable {
-    public var x: Float
-    public var y: Float
-
-    public init(x: Float, y: Float) {
-        self.x = x
-        self.y = y
-    }
-
-    @usableFromInline init(fromC c: ___Point) {
-        self.init(x: c.x, y: c.y)
-    }
-
-    @usableFromInline var cValue: ___Point {
-        ___Point(x: x, y: y)
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> Point {
-        Point(x: reader.readF32(), y: reader.readF32())
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeF32(self.x)
-        writer.writeF32(self.y)
-    }
-}
-
-public struct Rect: Hashable, Equatable, Sendable {
-    public var left: Float
-    public var right: Float
-    public var top: Float
-    public var bottom: Float
-
-    public init(
-        left: Float,
-        right: Float,
-        top: Float,
-        bottom: Float
-    ) {
-        self.left = left
-        self.right = right
-        self.top = top
-        self.bottom = bottom
-    }
-
-    @usableFromInline init(fromC c: ___Rect) {
-        self.init(
-            left: c.left,
-            right: c.right,
-            top: c.top,
-            bottom: c.bottom
-        )
-    }
-
-    @usableFromInline var cValue: ___Rect {
-        ___Rect(
-            left: left,
-            right: right,
-            top: top,
-            bottom: bottom
-        )
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> Rect {
-        Rect(
-            left: reader.readF32(),
-            right: reader.readF32(),
-            top: reader.readF32(),
-            bottom: reader.readF32()
-        )
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeF32(self.left)
-        writer.writeF32(self.right)
-        writer.writeF32(self.top)
-        writer.writeF32(self.bottom)
-    }
-}
-
-/// A size whose axes may be unknown (`nil` in Swift).
-public struct OptionalSize: Hashable, Equatable, Sendable {
-    public var width: Float?
-    public var height: Float?
-
-    public init(width: Float?, height: Float?) {
-        self.width = width
-        self.height = height
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> OptionalSize {
-        OptionalSize(width: reader.readOptional { reader in reader.readF32() }, height: reader.readOptional { reader in reader.readF32() })
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeOptional(self.width) { writer, boltffiValue0 in writer.writeF32(boltffiValue0) }
-        writer.writeOptional(self.height) { writer, boltffiValue0 in writer.writeF32(boltffiValue0) }
+        writer.writeI32(self.keyword.rawValue)
+        writer.writeI32(self.safety.rawValue)
     }
 }
 
@@ -184,48 +72,50 @@ public struct AvailableSize: Hashable, Equatable, Sendable {
     }
 }
 
-/// A grid track size: `minmax(min, max)`. A single value `v` is expressed as `min == max == v`
-/// (or `min: auto, max: fr(n)` for `1fr`).
-public struct TrackSizingFunction: Hashable, Equatable, Sendable {
-    public var min: MinTrackSizingFunction
-    public var max: MaxTrackSizingFunction
+/// CSS `contain` (only the flags Taffy understands).
+public struct Contain: Hashable, Equatable, Sendable {
+    public var layout: Bool
+    public var paint: Bool
 
-    public init(min: MinTrackSizingFunction, max: MaxTrackSizingFunction) {
-        self.min = min
-        self.max = max
+    public init(layout: Bool, paint: Bool) {
+        self.layout = layout
+        self.paint = paint
     }
 
-    @inlinable static func decode(from reader: inout WireReader) -> TrackSizingFunction {
-        TrackSizingFunction(min: MinTrackSizingFunction.decode(from: &reader), max: MaxTrackSizingFunction.decode(from: &reader))
+    @usableFromInline init(fromC c: ___Contain) {
+        self.init(layout: c.layout, paint: c.paint)
+    }
+
+    @usableFromInline var cValue: ___Contain {
+        ___Contain(layout: layout, paint: paint)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> Contain {
+        Contain(layout: reader.readBool(), paint: reader.readBool())
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
-        self.min.encode(to: &writer)
-        self.max.encode(to: &writer)
+        writer.writeBool(self.layout)
+        writer.writeBool(self.paint)
     }
 }
 
-/// `repeat(count, tracks...)` inside `grid-template-rows` / `grid-template-columns`.
-public struct GridTemplateRepetition: Hashable, Equatable, Sendable {
-    public var count: RepetitionCount
-    public var tracks: [TrackSizingFunction]
-    /// Line names, one list per line: `tracks.len() + 1` entries.
-    public var lineNames: [[String]]
+public struct DimensionSize: Hashable, Equatable, Sendable {
+    public var width: TaffyDimension
+    public var height: TaffyDimension
 
-    public init(count: RepetitionCount, tracks: [TrackSizingFunction], lineNames: [[String]]) {
-        self.count = count
-        self.tracks = tracks
-        self.lineNames = lineNames
+    public init(width: TaffyDimension, height: TaffyDimension) {
+        self.width = width
+        self.height = height
     }
 
-    @inlinable static func decode(from reader: inout WireReader) -> GridTemplateRepetition {
-        GridTemplateRepetition(count: RepetitionCount.decode(from: &reader), tracks: reader.readArray { reader in TrackSizingFunction.decode(from: &reader) }, lineNames: reader.readArray { reader in reader.readArray { reader in reader.readString() } })
+    @inlinable static func decode(from reader: inout WireReader) -> DimensionSize {
+        DimensionSize(width: TaffyDimension.decode(from: &reader), height: TaffyDimension.decode(from: &reader))
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
-        self.count.encode(to: &writer)
-        writer.writeArray(self.tracks) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
-        writer.writeArray(self.lineNames) { writer, boltffiValue0 in writer.writeArray(boltffiValue0) { writer, boltffiValue1 in writer.writeString(boltffiValue1) } }
+        self.width.encode(to: &writer)
+        self.height.encode(to: &writer)
     }
 }
 
@@ -312,148 +202,27 @@ public struct GridTemplateAreas: Hashable, Equatable, Sendable {
     }
 }
 
-/// One node of a flattened tree: which entry of the style table it uses and how many children it has. Nodes are
-/// listed in pre-order, so a node's children (and their descendants) follow it directly.
-public struct NodeSpec: Hashable, Equatable, Sendable {
-    public var style: UInt32
-    public var childCount: UInt32
+/// `repeat(count, tracks...)` inside `grid-template-rows` / `grid-template-columns`.
+public struct GridTemplateRepetition: Hashable, Equatable, Sendable {
+    public var count: RepetitionCount
+    public var tracks: [TrackSizingFunction]
+    /// Line names, one list per line: `tracks.len() + 1` entries.
+    public var lineNames: [[String]]
 
-    public init(style: UInt32, childCount: UInt32) {
-        self.style = style
-        self.childCount = childCount
+    public init(count: RepetitionCount, tracks: [TrackSizingFunction], lineNames: [[String]]) {
+        self.count = count
+        self.tracks = tracks
+        self.lineNames = lineNames
     }
 
-    @usableFromInline init(fromC c: ___NodeSpec) {
-        self.init(style: c.style, childCount: c.child_count)
-    }
-
-    @usableFromInline var cValue: ___NodeSpec {
-        ___NodeSpec(style: style, child_count: childCount)
-    }
-}
-
-/// Used for `align-items`, `justify-items`, `align-self` and `justify-self`.
-public struct AlignItems: Hashable, Equatable, Sendable {
-    public var keyword: AlignItemsKeyword
-    public var safety: AlignmentSafety
-
-    public init(keyword: AlignItemsKeyword, safety: AlignmentSafety) {
-        self.keyword = keyword
-        self.safety = safety
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> AlignItems {
-        AlignItems(keyword: AlignItemsKeyword(rawValue: reader.readI32())!, safety: AlignmentSafety(rawValue: reader.readI32())!)
+    @inlinable static func decode(from reader: inout WireReader) -> GridTemplateRepetition {
+        GridTemplateRepetition(count: RepetitionCount.decode(from: &reader), tracks: reader.readArray { reader in TrackSizingFunction.decode(from: &reader) }, lineNames: reader.readArray { reader in reader.readArray { reader in reader.readString() } })
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeI32(self.keyword.rawValue)
-        writer.writeI32(self.safety.rawValue)
-    }
-}
-
-/// Used for `align-content` and `justify-content`.
-public struct AlignContent: Hashable, Equatable, Sendable {
-    public var keyword: AlignContentKeyword
-    public var safety: AlignmentSafety
-
-    public init(keyword: AlignContentKeyword, safety: AlignmentSafety) {
-        self.keyword = keyword
-        self.safety = safety
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> AlignContent {
-        AlignContent(keyword: AlignContentKeyword(rawValue: reader.readI32())!, safety: AlignmentSafety(rawValue: reader.readI32())!)
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeI32(self.keyword.rawValue)
-        writer.writeI32(self.safety.rawValue)
-    }
-}
-
-/// CSS `contain` (only the flags Taffy understands).
-public struct Contain: Hashable, Equatable, Sendable {
-    public var layout: Bool
-    public var paint: Bool
-
-    public init(layout: Bool, paint: Bool) {
-        self.layout = layout
-        self.paint = paint
-    }
-
-    @usableFromInline init(fromC c: ___Contain) {
-        self.init(layout: c.layout, paint: c.paint)
-    }
-
-    @usableFromInline var cValue: ___Contain {
-        ___Contain(layout: layout, paint: paint)
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> Contain {
-        Contain(layout: reader.readBool(), paint: reader.readBool())
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeBool(self.layout)
-        writer.writeBool(self.paint)
-    }
-}
-
-public struct DimensionSize: Hashable, Equatable, Sendable {
-    public var width: TaffyDimension
-    public var height: TaffyDimension
-
-    public init(width: TaffyDimension, height: TaffyDimension) {
-        self.width = width
-        self.height = height
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> DimensionSize {
-        DimensionSize(width: TaffyDimension.decode(from: &reader), height: TaffyDimension.decode(from: &reader))
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        self.width.encode(to: &writer)
-        self.height.encode(to: &writer)
-    }
-}
-
-public struct LengthPercentageAutoSize: Hashable, Equatable, Sendable {
-    public var width: LengthPercentageAuto
-    public var height: LengthPercentageAuto
-
-    public init(width: LengthPercentageAuto, height: LengthPercentageAuto) {
-        self.width = width
-        self.height = height
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentageAutoSize {
-        LengthPercentageAutoSize(width: LengthPercentageAuto.decode(from: &reader), height: LengthPercentageAuto.decode(from: &reader))
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        self.width.encode(to: &writer)
-        self.height.encode(to: &writer)
-    }
-}
-
-public struct LengthPercentageSize: Hashable, Equatable, Sendable {
-    public var width: LengthPercentage
-    public var height: LengthPercentage
-
-    public init(width: LengthPercentage, height: LengthPercentage) {
-        self.width = width
-        self.height = height
-    }
-
-    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentageSize {
-        LengthPercentageSize(width: LengthPercentage.decode(from: &reader), height: LengthPercentage.decode(from: &reader))
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        self.width.encode(to: &writer)
-        self.height.encode(to: &writer)
+        self.count.encode(to: &writer)
+        writer.writeArray(self.tracks) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeArray(self.lineNames) { writer, boltffiValue0 in writer.writeArray(boltffiValue0) { writer, boltffiValue1 in writer.writeString(boltffiValue1) } }
     }
 }
 
@@ -492,6 +261,25 @@ public struct LengthPercentageAutoRect: Hashable, Equatable, Sendable {
     }
 }
 
+public struct LengthPercentageAutoSize: Hashable, Equatable, Sendable {
+    public var width: LengthPercentageAuto
+    public var height: LengthPercentageAuto
+
+    public init(width: LengthPercentageAuto, height: LengthPercentageAuto) {
+        self.width = width
+        self.height = height
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentageAutoSize {
+        LengthPercentageAutoSize(width: LengthPercentageAuto.decode(from: &reader), height: LengthPercentageAuto.decode(from: &reader))
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        self.width.encode(to: &writer)
+        self.height.encode(to: &writer)
+    }
+}
+
 public struct LengthPercentageRect: Hashable, Equatable, Sendable {
     public var left: LengthPercentage
     public var right: LengthPercentage
@@ -527,6 +315,149 @@ public struct LengthPercentageRect: Hashable, Equatable, Sendable {
     }
 }
 
+public struct LengthPercentageSize: Hashable, Equatable, Sendable {
+    public var width: LengthPercentage
+    public var height: LengthPercentage
+
+    public init(width: LengthPercentage, height: LengthPercentage) {
+        self.width = width
+        self.height = height
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentageSize {
+        LengthPercentageSize(width: LengthPercentage.decode(from: &reader), height: LengthPercentage.decode(from: &reader))
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        self.width.encode(to: &writer)
+        self.height.encode(to: &writer)
+    }
+}
+
+/// Identifies a node inside a [`TaffyTree`](crate::TaffyTree).
+public struct NodeId: Hashable, Equatable, Sendable {
+    public var raw: UInt64
+
+    public init(raw: UInt64) {
+        self.raw = raw
+    }
+
+    @usableFromInline init(fromC c: ___NodeId) {
+        self.init(raw: c.raw)
+    }
+
+    @usableFromInline var cValue: ___NodeId {
+        ___NodeId(raw: raw)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> NodeId {
+        NodeId(raw: reader.readU64())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeU64(self.raw)
+    }
+}
+
+/// The computed layout of a node (`taffy::Layout`).
+public struct NodeLayout: Hashable, Equatable, Sendable {
+    /// Paint / hit-test order among siblings.
+    public var order: UInt32
+    /// Position relative to the parent's border box.
+    public var location: Point
+    /// Size of the node's border box.
+    public var size: Size
+    public var scrollableOverflowRect: Rect
+    public var scrollbarSize: Size
+    public var border: Rect
+    public var padding: Rect
+    public var margin: Rect
+
+    public init(
+        order: UInt32,
+        location: Point,
+        size: Size,
+        scrollableOverflowRect: Rect,
+        scrollbarSize: Size,
+        border: Rect,
+        padding: Rect,
+        margin: Rect
+    ) {
+        self.order = order
+        self.location = location
+        self.size = size
+        self.scrollableOverflowRect = scrollableOverflowRect
+        self.scrollbarSize = scrollbarSize
+        self.border = border
+        self.padding = padding
+        self.margin = margin
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> NodeLayout {
+        NodeLayout(
+            order: reader.readU32(),
+            location: Point.decode(from: &reader),
+            size: Size.decode(from: &reader),
+            scrollableOverflowRect: Rect.decode(from: &reader),
+            scrollbarSize: Size.decode(from: &reader),
+            border: Rect.decode(from: &reader),
+            padding: Rect.decode(from: &reader),
+            margin: Rect.decode(from: &reader)
+        )
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeU32(self.order)
+        self.location.encode(to: &writer)
+        self.size.encode(to: &writer)
+        self.scrollableOverflowRect.encode(to: &writer)
+        self.scrollbarSize.encode(to: &writer)
+        self.border.encode(to: &writer)
+        self.padding.encode(to: &writer)
+        self.margin.encode(to: &writer)
+    }
+}
+
+/// One node of a flattened tree: which entry of the style table it uses and how many children it has. Nodes are
+/// listed in pre-order, so a node's children (and their descendants) follow it directly.
+public struct NodeSpec: Hashable, Equatable, Sendable {
+    public var style: UInt32
+    public var childCount: UInt32
+
+    public init(style: UInt32, childCount: UInt32) {
+        self.style = style
+        self.childCount = childCount
+    }
+
+    @usableFromInline init(fromC c: ___NodeSpec) {
+        self.init(style: c.style, childCount: c.child_count)
+    }
+
+    @usableFromInline var cValue: ___NodeSpec {
+        ___NodeSpec(style: style, child_count: childCount)
+    }
+}
+
+/// A size whose axes may be unknown (`nil` in Swift).
+public struct OptionalSize: Hashable, Equatable, Sendable {
+    public var width: Float?
+    public var height: Float?
+
+    public init(width: Float?, height: Float?) {
+        self.width = width
+        self.height = height
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> OptionalSize {
+        OptionalSize(width: reader.readOptional { reader in reader.readF32() }, height: reader.readOptional { reader in reader.readF32() })
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeOptional(self.width) { writer, boltffiValue0 in writer.writeF32(boltffiValue0) }
+        writer.writeOptional(self.height) { writer, boltffiValue0 in writer.writeF32(boltffiValue0) }
+    }
+}
+
 public struct OverflowPoint: Hashable, Equatable, Sendable {
     public var x: Overflow
     public var y: Overflow
@@ -543,6 +474,113 @@ public struct OverflowPoint: Hashable, Equatable, Sendable {
     @inlinable func encode(to writer: inout WireWriter) {
         writer.writeI32(self.x.rawValue)
         writer.writeI32(self.y.rawValue)
+    }
+}
+
+public struct Point: Hashable, Equatable, Sendable {
+    public var x: Float
+    public var y: Float
+
+    public init(x: Float, y: Float) {
+        self.x = x
+        self.y = y
+    }
+
+    @usableFromInline init(fromC c: ___Point) {
+        self.init(x: c.x, y: c.y)
+    }
+
+    @usableFromInline var cValue: ___Point {
+        ___Point(x: x, y: y)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> Point {
+        Point(x: reader.readF32(), y: reader.readF32())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeF32(self.x)
+        writer.writeF32(self.y)
+    }
+}
+
+public struct Rect: Hashable, Equatable, Sendable {
+    public var left: Float
+    public var right: Float
+    public var top: Float
+    public var bottom: Float
+
+    public init(
+        left: Float,
+        right: Float,
+        top: Float,
+        bottom: Float
+    ) {
+        self.left = left
+        self.right = right
+        self.top = top
+        self.bottom = bottom
+    }
+
+    @usableFromInline init(fromC c: ___Rect) {
+        self.init(
+            left: c.left,
+            right: c.right,
+            top: c.top,
+            bottom: c.bottom
+        )
+    }
+
+    @usableFromInline var cValue: ___Rect {
+        ___Rect(
+            left: left,
+            right: right,
+            top: top,
+            bottom: bottom
+        )
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> Rect {
+        Rect(
+            left: reader.readF32(),
+            right: reader.readF32(),
+            top: reader.readF32(),
+            bottom: reader.readF32()
+        )
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeF32(self.left)
+        writer.writeF32(self.right)
+        writer.writeF32(self.top)
+        writer.writeF32(self.bottom)
+    }
+}
+
+public struct Size: Hashable, Equatable, Sendable {
+    public var width: Float
+    public var height: Float
+
+    public init(width: Float, height: Float) {
+        self.width = width
+        self.height = height
+    }
+
+    @usableFromInline init(fromC c: ___Size) {
+        self.init(width: c.width, height: c.height)
+    }
+
+    @usableFromInline var cValue: ___Size {
+        ___Size(width: width, height: height)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> Size {
+        Size(width: reader.readF32(), height: reader.readF32())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeF32(self.width)
+        writer.writeF32(self.height)
     }
 }
 
@@ -781,62 +819,80 @@ public struct Style: Hashable, Equatable, Sendable {
     }
 }
 
-/// The computed layout of a node (`taffy::Layout`).
-public struct NodeLayout: Hashable, Equatable, Sendable {
-    /// Paint / hit-test order among siblings.
-    public var order: UInt32
-    /// Position relative to the parent's border box.
-    public var location: Point
-    /// Size of the node's border box.
-    public var size: Size
-    public var scrollableOverflowRect: Rect
-    public var scrollbarSize: Size
-    public var border: Rect
-    public var padding: Rect
-    public var margin: Rect
+/// A grid track size: `minmax(min, max)`. A single value `v` is expressed as `min == max == v`
+/// (or `min: auto, max: fr(n)` for `1fr`).
+public struct TrackSizingFunction: Hashable, Equatable, Sendable {
+    public var min: MinTrackSizingFunction
+    public var max: MaxTrackSizingFunction
 
-    public init(
-        order: UInt32,
-        location: Point,
-        size: Size,
-        scrollableOverflowRect: Rect,
-        scrollbarSize: Size,
-        border: Rect,
-        padding: Rect,
-        margin: Rect
-    ) {
-        self.order = order
-        self.location = location
-        self.size = size
-        self.scrollableOverflowRect = scrollableOverflowRect
-        self.scrollbarSize = scrollbarSize
-        self.border = border
-        self.padding = padding
-        self.margin = margin
+    public init(min: MinTrackSizingFunction, max: MaxTrackSizingFunction) {
+        self.min = min
+        self.max = max
     }
 
-    @inlinable static func decode(from reader: inout WireReader) -> NodeLayout {
-        NodeLayout(
-            order: reader.readU32(),
-            location: Point.decode(from: &reader),
-            size: Size.decode(from: &reader),
-            scrollableOverflowRect: Rect.decode(from: &reader),
-            scrollbarSize: Size.decode(from: &reader),
-            border: Rect.decode(from: &reader),
-            padding: Rect.decode(from: &reader),
-            margin: Rect.decode(from: &reader)
-        )
+    @inlinable static func decode(from reader: inout WireReader) -> TrackSizingFunction {
+        TrackSizingFunction(min: MinTrackSizingFunction.decode(from: &reader), max: MaxTrackSizingFunction.decode(from: &reader))
     }
 
     @inlinable func encode(to writer: inout WireWriter) {
-        writer.writeU32(self.order)
-        self.location.encode(to: &writer)
-        self.size.encode(to: &writer)
-        self.scrollableOverflowRect.encode(to: &writer)
-        self.scrollbarSize.encode(to: &writer)
-        self.border.encode(to: &writer)
-        self.padding.encode(to: &writer)
-        self.margin.encode(to: &writer)
+        self.min.encode(to: &writer)
+        self.max.encode(to: &writer)
+    }
+}
+
+public enum AlignContentKeyword: Int32, Hashable, Sendable, CaseIterable {
+    case normal = 0
+    case start = 1
+    case end = 2
+    case flexStart = 3
+    case flexEnd = 4
+    case center = 5
+    case stretch = 6
+    case spaceBetween = 7
+    case spaceEvenly = 8
+    case spaceAround = 9
+
+    @usableFromInline init(fromC c: Int32) {
+        self = AlignContentKeyword(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum AlignItemsKeyword: Int32, Hashable, Sendable, CaseIterable {
+    case normal = 0
+    case start = 1
+    case end = 2
+    case flexStart = 3
+    case flexEnd = 4
+    case selfStart = 5
+    case selfEnd = 6
+    case center = 7
+    case baseline = 8
+    case stretch = 9
+
+    @usableFromInline init(fromC c: Int32) {
+        self = AlignItemsKeyword(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum AlignmentSafety: Int32, Hashable, Sendable, CaseIterable {
+    case `default` = 0
+    case unsafe = 1
+    case safe = 2
+
+    @usableFromInline init(fromC c: Int32) {
+        self = AlignmentSafety(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
     }
 }
 
@@ -873,6 +929,110 @@ public enum AvailableSpace: Hashable, Equatable, Sendable {
     }
 }
 
+public enum BoxSizing: Int32, Hashable, Sendable, CaseIterable {
+    case borderBox = 0
+    case contentBox = 1
+
+    @usableFromInline init(fromC c: Int32) {
+        self = BoxSizing(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+/// Taffy's `Clear`.
+public enum ClearSide: Int32, Hashable, Sendable, CaseIterable {
+    case left = 0
+    case right = 1
+    case both = 2
+    case none = 3
+
+    @usableFromInline init(fromC c: Int32) {
+        self = ClearSide(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum Direction: Int32, Hashable, Sendable, CaseIterable {
+    case ltr = 0
+    case rtl = 1
+
+    @usableFromInline init(fromC c: Int32) {
+        self = Direction(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum Display: Int32, Hashable, Sendable, CaseIterable {
+    case block = 0
+    case flowRoot = 1
+    case flex = 2
+    case grid = 3
+    case none = 4
+
+    @usableFromInline init(fromC c: Int32) {
+        self = Display(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum FlexDirection: Int32, Hashable, Sendable, CaseIterable {
+    case row = 0
+    case column = 1
+    case rowReverse = 2
+    case columnReverse = 3
+
+    @usableFromInline init(fromC c: Int32) {
+        self = FlexDirection(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum FlexWrap: Int32, Hashable, Sendable, CaseIterable {
+    case noWrap = 0
+    case wrap = 1
+    case wrapReverse = 2
+    case balance = 3
+    case balanceReverse = 4
+
+    @usableFromInline init(fromC c: Int32) {
+        self = FlexWrap(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+/// Taffy's `Float` (named differently to avoid clashing with Swift's `Float`).
+public enum FloatSide: Int32, Hashable, Sendable, CaseIterable {
+    case left = 0
+    case right = 1
+    case none = 2
+
+    @usableFromInline init(fromC c: Int32) {
+        self = FloatSide(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
 public enum GridAutoFlow: Int32, Hashable, Sendable, CaseIterable {
     case row = 0
     case column = 1
@@ -888,15 +1048,122 @@ public enum GridAutoFlow: Int32, Hashable, Sendable, CaseIterable {
     }
 }
 
-/// The minimum of a track size (`minmax(min, max)` first argument).
-public enum MinTrackSizingFunction: Hashable, Equatable, Sendable {
+/// Where a grid item starts or ends along one axis.
+public enum GridPlacement: Hashable, Equatable, Sendable {
+    case auto
+    /// A 1-based line index; negative values count from the end.
+    case line(Int16)
+    /// The `index`-th line called `name`.
+    case namedLine(name: String, index: Int16)
+    case span(UInt16)
+    /// A span of `count` lines counted by lines called `name`.
+    case namedSpan(name: String, count: UInt16)
+
+    @inlinable static func decode(from reader: inout WireReader) -> GridPlacement {
+        let tag = reader.readU32()
+        switch tag {
+        case 0:
+            return .auto
+        case 1:
+            return .line(reader.readI16())
+        case 2:
+            return .namedLine(name: reader.readString(), index: reader.readI16())
+        case 3:
+            return .span(reader.readU16())
+        case 4:
+            return .namedSpan(name: reader.readString(), count: reader.readU16())
+        default:
+            fatalError("Invalid GridPlacement tag: \(tag)")
+        }
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        switch self {
+        case .auto:
+            writer.writeU32(0)
+        case let .line(field0):
+            writer.writeU32(1)
+            writer.writeI16(field0)
+        case let .namedLine(name, index):
+            writer.writeU32(2)
+            writer.writeString(name)
+            writer.writeI16(index)
+        case let .span(field0):
+            writer.writeU32(3)
+            writer.writeU16(field0)
+        case let .namedSpan(name, count):
+            writer.writeU32(4)
+            writer.writeString(name)
+            writer.writeU16(count)
+        }
+    }
+}
+
+/// One entry of `grid-template-rows` / `grid-template-columns`.
+public enum GridTemplateComponent: Hashable, Equatable, Sendable {
+    case single(TrackSizingFunction)
+    case `repeat`(GridTemplateRepetition)
+
+    @inlinable static func decode(from reader: inout WireReader) -> GridTemplateComponent {
+        let tag = reader.readU32()
+        switch tag {
+        case 0:
+            return .single(TrackSizingFunction.decode(from: &reader))
+        case 1:
+            return .`repeat`(GridTemplateRepetition.decode(from: &reader))
+        default:
+            fatalError("Invalid GridTemplateComponent tag: \(tag)")
+        }
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        switch self {
+        case let .single(field0):
+            writer.writeU32(0)
+            field0.encode(to: &writer)
+        case let .`repeat`(field0):
+            writer.writeU32(1)
+            field0.encode(to: &writer)
+        }
+    }
+}
+
+/// A length or a percentage (never `auto`). `calc()` is not supported.
+public enum LengthPercentage: Hashable, Equatable, Sendable {
+    case length(Float)
+    case percent(Float)
+
+    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentage {
+        let tag = reader.readU32()
+        switch tag {
+        case 0:
+            return .length(reader.readF32())
+        case 1:
+            return .percent(reader.readF32())
+        default:
+            fatalError("Invalid LengthPercentage tag: \(tag)")
+        }
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        switch self {
+        case let .length(field0):
+            writer.writeU32(0)
+            writer.writeF32(field0)
+        case let .percent(field0):
+            writer.writeU32(1)
+            writer.writeF32(field0)
+        }
+    }
+}
+
+/// A length, a percentage or `auto`.
+public enum LengthPercentageAuto: Hashable, Equatable, Sendable {
     case length(Float)
     case percent(Float)
     case auto
-    case minContent
-    case maxContent
 
-    @inlinable static func decode(from reader: inout WireReader) -> MinTrackSizingFunction {
+    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentageAuto {
         let tag = reader.readU32()
         switch tag {
         case 0:
@@ -905,12 +1172,8 @@ public enum MinTrackSizingFunction: Hashable, Equatable, Sendable {
             return .percent(reader.readF32())
         case 2:
             return .auto
-        case 3:
-            return .minContent
-        case 4:
-            return .maxContent
         default:
-            fatalError("Invalid MinTrackSizingFunction tag: \(tag)")
+            fatalError("Invalid LengthPercentageAuto tag: \(tag)")
         }
     }
 
@@ -924,10 +1187,6 @@ public enum MinTrackSizingFunction: Hashable, Equatable, Sendable {
             writer.writeF32(field0)
         case .auto:
             writer.writeU32(2)
-        case .minContent:
-            writer.writeU32(3)
-        case .maxContent:
-            writer.writeU32(4)
         }
     }
 }
@@ -994,6 +1253,81 @@ public enum MaxTrackSizingFunction: Hashable, Equatable, Sendable {
     }
 }
 
+/// The minimum of a track size (`minmax(min, max)` first argument).
+public enum MinTrackSizingFunction: Hashable, Equatable, Sendable {
+    case length(Float)
+    case percent(Float)
+    case auto
+    case minContent
+    case maxContent
+
+    @inlinable static func decode(from reader: inout WireReader) -> MinTrackSizingFunction {
+        let tag = reader.readU32()
+        switch tag {
+        case 0:
+            return .length(reader.readF32())
+        case 1:
+            return .percent(reader.readF32())
+        case 2:
+            return .auto
+        case 3:
+            return .minContent
+        case 4:
+            return .maxContent
+        default:
+            fatalError("Invalid MinTrackSizingFunction tag: \(tag)")
+        }
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        switch self {
+        case let .length(field0):
+            writer.writeU32(0)
+            writer.writeF32(field0)
+        case let .percent(field0):
+            writer.writeU32(1)
+            writer.writeF32(field0)
+        case .auto:
+            writer.writeU32(2)
+        case .minContent:
+            writer.writeU32(3)
+        case .maxContent:
+            writer.writeU32(4)
+        }
+    }
+}
+
+public enum Overflow: Int32, Hashable, Sendable, CaseIterable {
+    case visible = 0
+    case clip = 1
+    case hidden = 2
+    case scroll = 3
+
+    @usableFromInline init(fromC c: Int32) {
+        self = Overflow(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+public enum Position: Int32, Hashable, Sendable, CaseIterable {
+    case `static` = 0
+    case relative = 1
+    case absolute = 2
+    case fixed = 3
+    case sticky = 4
+
+    @usableFromInline init(fromC c: Int32) {
+        self = Position(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
 public enum RepetitionCount: Hashable, Equatable, Sendable {
     case autoFill
     case autoFit
@@ -1022,355 +1356,6 @@ public enum RepetitionCount: Hashable, Equatable, Sendable {
         case let .count(field0):
             writer.writeU32(2)
             writer.writeU16(field0)
-        }
-    }
-}
-
-/// One entry of `grid-template-rows` / `grid-template-columns`.
-public enum GridTemplateComponent: Hashable, Equatable, Sendable {
-    case single(TrackSizingFunction)
-    case `repeat`(GridTemplateRepetition)
-
-    @inlinable static func decode(from reader: inout WireReader) -> GridTemplateComponent {
-        let tag = reader.readU32()
-        switch tag {
-        case 0:
-            return .single(TrackSizingFunction.decode(from: &reader))
-        case 1:
-            return .`repeat`(GridTemplateRepetition.decode(from: &reader))
-        default:
-            fatalError("Invalid GridTemplateComponent tag: \(tag)")
-        }
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        switch self {
-        case let .single(field0):
-            writer.writeU32(0)
-            field0.encode(to: &writer)
-        case let .`repeat`(field0):
-            writer.writeU32(1)
-            field0.encode(to: &writer)
-        }
-    }
-}
-
-/// Where a grid item starts or ends along one axis.
-public enum GridPlacement: Hashable, Equatable, Sendable {
-    case auto
-    /// A 1-based line index; negative values count from the end.
-    case line(Int16)
-    /// The `index`-th line called `name`.
-    case namedLine(name: String, index: Int16)
-    case span(UInt16)
-    /// A span of `count` lines counted by lines called `name`.
-    case namedSpan(name: String, count: UInt16)
-
-    @inlinable static func decode(from reader: inout WireReader) -> GridPlacement {
-        let tag = reader.readU32()
-        switch tag {
-        case 0:
-            return .auto
-        case 1:
-            return .line(reader.readI16())
-        case 2:
-            return .namedLine(name: reader.readString(), index: reader.readI16())
-        case 3:
-            return .span(reader.readU16())
-        case 4:
-            return .namedSpan(name: reader.readString(), count: reader.readU16())
-        default:
-            fatalError("Invalid GridPlacement tag: \(tag)")
-        }
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        switch self {
-        case .auto:
-            writer.writeU32(0)
-        case let .line(field0):
-            writer.writeU32(1)
-            writer.writeI16(field0)
-        case let .namedLine(name, index):
-            writer.writeU32(2)
-            writer.writeString(name)
-            writer.writeI16(index)
-        case let .span(field0):
-            writer.writeU32(3)
-            writer.writeU16(field0)
-        case let .namedSpan(name, count):
-            writer.writeU32(4)
-            writer.writeString(name)
-            writer.writeU16(count)
-        }
-    }
-}
-
-public enum Display: Int32, Hashable, Sendable, CaseIterable {
-    case block = 0
-    case flowRoot = 1
-    case flex = 2
-    case grid = 3
-    case none = 4
-
-    @usableFromInline init(fromC c: Int32) {
-        self = Display(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum Position: Int32, Hashable, Sendable, CaseIterable {
-    case `static` = 0
-    case relative = 1
-    case absolute = 2
-    case fixed = 3
-    case sticky = 4
-
-    @usableFromInline init(fromC c: Int32) {
-        self = Position(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum Overflow: Int32, Hashable, Sendable, CaseIterable {
-    case visible = 0
-    case clip = 1
-    case hidden = 2
-    case scroll = 3
-
-    @usableFromInline init(fromC c: Int32) {
-        self = Overflow(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum BoxSizing: Int32, Hashable, Sendable, CaseIterable {
-    case borderBox = 0
-    case contentBox = 1
-
-    @usableFromInline init(fromC c: Int32) {
-        self = BoxSizing(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum Direction: Int32, Hashable, Sendable, CaseIterable {
-    case ltr = 0
-    case rtl = 1
-
-    @usableFromInline init(fromC c: Int32) {
-        self = Direction(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-/// Taffy's `Float` (named differently to avoid clashing with Swift's `Float`).
-public enum FloatSide: Int32, Hashable, Sendable, CaseIterable {
-    case left = 0
-    case right = 1
-    case none = 2
-
-    @usableFromInline init(fromC c: Int32) {
-        self = FloatSide(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-/// Taffy's `Clear`.
-public enum ClearSide: Int32, Hashable, Sendable, CaseIterable {
-    case left = 0
-    case right = 1
-    case both = 2
-    case none = 3
-
-    @usableFromInline init(fromC c: Int32) {
-        self = ClearSide(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum TextAlign: Int32, Hashable, Sendable, CaseIterable {
-    case auto = 0
-    case legacyLeft = 1
-    case legacyRight = 2
-    case legacyCenter = 3
-
-    @usableFromInline init(fromC c: Int32) {
-        self = TextAlign(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum FlexDirection: Int32, Hashable, Sendable, CaseIterable {
-    case row = 0
-    case column = 1
-    case rowReverse = 2
-    case columnReverse = 3
-
-    @usableFromInline init(fromC c: Int32) {
-        self = FlexDirection(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum FlexWrap: Int32, Hashable, Sendable, CaseIterable {
-    case noWrap = 0
-    case wrap = 1
-    case wrapReverse = 2
-    case balance = 3
-    case balanceReverse = 4
-
-    @usableFromInline init(fromC c: Int32) {
-        self = FlexWrap(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum AlignmentSafety: Int32, Hashable, Sendable, CaseIterable {
-    case `default` = 0
-    case unsafe = 1
-    case safe = 2
-
-    @usableFromInline init(fromC c: Int32) {
-        self = AlignmentSafety(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum AlignItemsKeyword: Int32, Hashable, Sendable, CaseIterable {
-    case normal = 0
-    case start = 1
-    case end = 2
-    case flexStart = 3
-    case flexEnd = 4
-    case selfStart = 5
-    case selfEnd = 6
-    case center = 7
-    case baseline = 8
-    case stretch = 9
-
-    @usableFromInline init(fromC c: Int32) {
-        self = AlignItemsKeyword(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-public enum AlignContentKeyword: Int32, Hashable, Sendable, CaseIterable {
-    case normal = 0
-    case start = 1
-    case end = 2
-    case flexStart = 3
-    case flexEnd = 4
-    case center = 5
-    case stretch = 6
-    case spaceBetween = 7
-    case spaceEvenly = 8
-    case spaceAround = 9
-
-    @usableFromInline init(fromC c: Int32) {
-        self = AlignContentKeyword(rawValue: c)!
-    }
-
-    @usableFromInline var cValue: Int32 {
-        rawValue
-    }
-}
-
-/// A length or a percentage (never `auto`). `calc()` is not supported.
-public enum LengthPercentage: Hashable, Equatable, Sendable {
-    case length(Float)
-    case percent(Float)
-
-    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentage {
-        let tag = reader.readU32()
-        switch tag {
-        case 0:
-            return .length(reader.readF32())
-        case 1:
-            return .percent(reader.readF32())
-        default:
-            fatalError("Invalid LengthPercentage tag: \(tag)")
-        }
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        switch self {
-        case let .length(field0):
-            writer.writeU32(0)
-            writer.writeF32(field0)
-        case let .percent(field0):
-            writer.writeU32(1)
-            writer.writeF32(field0)
-        }
-    }
-}
-
-/// A length, a percentage or `auto`.
-public enum LengthPercentageAuto: Hashable, Equatable, Sendable {
-    case length(Float)
-    case percent(Float)
-    case auto
-
-    @inlinable static func decode(from reader: inout WireReader) -> LengthPercentageAuto {
-        let tag = reader.readU32()
-        switch tag {
-        case 0:
-            return .length(reader.readF32())
-        case 1:
-            return .percent(reader.readF32())
-        case 2:
-            return .auto
-        default:
-            fatalError("Invalid LengthPercentageAuto tag: \(tag)")
-        }
-    }
-
-    @inlinable func encode(to writer: inout WireWriter) {
-        switch self {
-        case let .length(field0):
-            writer.writeU32(0)
-            writer.writeF32(field0)
-        case let .percent(field0):
-            writer.writeU32(1)
-            writer.writeF32(field0)
-        case .auto:
-            writer.writeU32(2)
         }
     }
 }
@@ -1468,6 +1453,22 @@ public enum TaffyError: Int32, Hashable, Sendable, CaseIterable, Error {
     }
 }
 
+public enum TextAlign: Int32, Hashable, Sendable, CaseIterable {
+    case auto = 0
+    case legacyLeft = 1
+    case legacyRight = 2
+    case legacyCenter = 3
+
+    @usableFromInline init(fromC c: Int32) {
+        self = TextAlign(rawValue: c)!
+    }
+
+    @usableFromInline var cValue: Int32 {
+        rawValue
+    }
+}
+
+/// A tree of layout nodes. Safe to share between threads; calls are serialized internally.
 public final class TaffyTree {
     private var __boltffiHandle: UInt64 = 0
 
@@ -1486,29 +1487,29 @@ public final class TaffyTree {
 
     deinit {
         let handle = __boltffiTakeHandle()
-        if handle != 0 { boltffi_release_class_zd_taffy_tree_taffy_tree(handle) }
+        if handle != 0 { boltffi_release_class_8zd_taffy9TaffyTree(handle) }
     }
 
     /// Creates an empty tree with rounding enabled.
     public init() {
-        self.handle = boltffi_init_class_zd_taffy_tree_taffy_tree_new()
+        self.handle = boltffi_init_class_8zd_taffy9TaffyTree3new()
     }
 
     /// Rounds computed layouts to whole pixels (the default).
     public func enableRounding() {
-        boltffi_method_class_zd_taffy_tree_taffy_tree_enable_rounding(self.handle)
+        boltffi_method_class_8zd_taffy9TaffyTree15enable_rounding(self.handle)
     }
 
     /// Keeps fractional layout values.
     public func disableRounding() {
-        boltffi_method_class_zd_taffy_tree_taffy_tree_disable_rounding(self.handle)
+        boltffi_method_class_8zd_taffy9TaffyTree16disable_rounding(self.handle)
     }
 
     public func newLeaf(style: Style) throws -> NodeId {
         let boltffiStyleBytes = boltffiEncode { boltffiStyleWriter in style.encode(to: &boltffiStyleWriter) }
         return try boltffiStyleBytes.withUnsafeBufferPointer { boltffiStyleBuffer in
             var boltffiResult: ___NodeId = ___NodeId()
-            let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_new_leaf(
+            let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree8new_leaf(
                 self.handle,
                 boltffiStyleBuffer.baseAddress!,
                 UInt(boltffiStyleBuffer.count),
@@ -1528,7 +1529,7 @@ public final class TaffyTree {
             let boltffiChildrenBytes = boltffiEncode { boltffiChildrenWriter in boltffiChildrenWriter.writeArray(children) { boltffiChildrenWriter, boltffiValue0 in boltffiValue0.encode(to: &boltffiChildrenWriter) } }
             return try boltffiChildrenBytes.withUnsafeBufferPointer { boltffiChildrenBuffer in
                 var boltffiResult: ___NodeId = ___NodeId()
-                let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_new_with_children(
+                let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree17new_with_children(
                     self.handle,
                     boltffiStyleBuffer.baseAddress!,
                     UInt(boltffiStyleBuffer.count),
@@ -1547,13 +1548,13 @@ public final class TaffyTree {
 
     /// Removes every node.
     public func clear() {
-        boltffi_method_class_zd_taffy_tree_taffy_tree_clear(self.handle)
+        boltffi_method_class_8zd_taffy9TaffyTree5clear(self.handle)
     }
 
     /// Removes a node and detaches it from its parent. Its children become roots.
     public func remove(node: NodeId) throws -> NodeId {
         var boltffiResult: ___NodeId = ___NodeId()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_remove(self.handle, node.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree6remove(self.handle, node.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1562,7 +1563,7 @@ public final class TaffyTree {
     }
 
     public func addChild(parent: NodeId, child: NodeId) throws {
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_add_child(self.handle, parent.cValue, child.cValue)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree9add_child(self.handle, parent.cValue, child.cValue)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1570,7 +1571,7 @@ public final class TaffyTree {
     }
 
     public func insertChildAtIndex(parent: NodeId, index: UInt32, child: NodeId) throws {
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_insert_child_at_index(
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree21insert_child_at_index(
             self.handle,
             parent.cValue,
             index,
@@ -1585,7 +1586,7 @@ public final class TaffyTree {
     public func setChildren(parent: NodeId, children: [NodeId]) throws {
         let boltffiChildrenBytes = boltffiEncode { boltffiChildrenWriter in boltffiChildrenWriter.writeArray(children) { boltffiChildrenWriter, boltffiValue0 in boltffiValue0.encode(to: &boltffiChildrenWriter) } }
         try boltffiChildrenBytes.withUnsafeBufferPointer { boltffiChildrenBuffer -> Void in
-            let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_set_children(
+            let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree12set_children(
                 self.handle,
                 parent.cValue,
                 boltffiChildrenBuffer.baseAddress!,
@@ -1600,7 +1601,7 @@ public final class TaffyTree {
 
     public func removeChild(parent: NodeId, child: NodeId) throws -> NodeId {
         var boltffiResult: ___NodeId = ___NodeId()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_remove_child(
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree12remove_child(
             self.handle,
             parent.cValue,
             child.cValue,
@@ -1615,7 +1616,7 @@ public final class TaffyTree {
 
     public func removeChildAtIndex(parent: NodeId, index: UInt32) throws -> NodeId {
         var boltffiResult: ___NodeId = ___NodeId()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_remove_child_at_index(
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree21remove_child_at_index(
             self.handle,
             parent.cValue,
             index,
@@ -1631,7 +1632,7 @@ public final class TaffyTree {
     /// Replaces the child at `index`, returning the node that was replaced.
     public func replaceChildAtIndex(parent: NodeId, index: UInt32, child: NodeId) throws -> NodeId {
         var boltffiResult: ___NodeId = ___NodeId()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_replace_child_at_index(
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree22replace_child_at_index(
             self.handle,
             parent.cValue,
             index,
@@ -1647,7 +1648,7 @@ public final class TaffyTree {
 
     public func childAtIndex(parent: NodeId, index: UInt32) throws -> NodeId {
         var boltffiResult: ___NodeId = ___NodeId()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_child_at_index(
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree14child_at_index(
             self.handle,
             parent.cValue,
             index,
@@ -1662,7 +1663,7 @@ public final class TaffyTree {
 
     public func children(parent: NodeId) throws -> [NodeId] {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_children(self.handle, parent.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree8children(self.handle, parent.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1673,7 +1674,7 @@ public final class TaffyTree {
 
     public func childCount(parent: NodeId) throws -> UInt32 {
         var boltffiResult: UInt32 = UInt32()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_child_count(self.handle, parent.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree11child_count(self.handle, parent.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1682,20 +1683,20 @@ public final class TaffyTree {
     }
 
     public func parent(child: NodeId) -> NodeId? {
-        let boltffiResult = boltffi_method_class_zd_taffy_tree_taffy_tree_parent(self.handle, child.cValue)
+        let boltffiResult = boltffi_method_class_8zd_taffy9TaffyTree6parent(self.handle, child.cValue)
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in NodeId.decode(from: &boltffiReader) } }
     }
 
     /// Number of nodes in the tree.
     public func totalNodeCount() -> UInt32 {
-        return boltffi_method_class_zd_taffy_tree_taffy_tree_total_node_count(self.handle)
+        return boltffi_method_class_8zd_taffy9TaffyTree16total_node_count(self.handle)
     }
 
     public func setStyle(node: NodeId, style: Style) throws {
         let boltffiStyleBytes = boltffiEncode { boltffiStyleWriter in style.encode(to: &boltffiStyleWriter) }
         try boltffiStyleBytes.withUnsafeBufferPointer { boltffiStyleBuffer -> Void in
-            let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_set_style(
+            let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree9set_style(
                 self.handle,
                 node.cValue,
                 boltffiStyleBuffer.baseAddress!,
@@ -1710,7 +1711,7 @@ public final class TaffyTree {
 
     public func style(node: NodeId) throws -> Style {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_style(self.handle, node.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree5style(self.handle, node.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1721,7 +1722,7 @@ public final class TaffyTree {
 
     /// Marks a node (and its ancestors) as needing layout.
     public func markDirty(node: NodeId) throws {
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_mark_dirty(self.handle, node.cValue)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree10mark_dirty(self.handle, node.cValue)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1730,7 +1731,7 @@ public final class TaffyTree {
 
     public func dirty(node: NodeId) throws -> Bool {
         var boltffiResult: Bool = Bool()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_dirty(self.handle, node.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree5dirty(self.handle, node.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1741,7 +1742,7 @@ public final class TaffyTree {
     /// The final (rounded, if rounding is enabled) layout of a node.
     public func layout(node: NodeId) throws -> NodeLayout {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_layout(self.handle, node.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree6layout(self.handle, node.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1753,7 +1754,7 @@ public final class TaffyTree {
     /// The layout before rounding.
     public func unroundedLayout(node: NodeId) throws -> NodeLayout {
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
-        let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_unrounded_layout(self.handle, node.cValue, &boltffiResult)
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree16unrounded_layout(self.handle, node.cValue, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1766,7 +1767,7 @@ public final class TaffyTree {
     public func computeLayout(root: NodeId, available: AvailableSize) throws {
         let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
         try boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer -> Void in
-            let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_compute_layout(
+            let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree14compute_layout(
                 self.handle,
                 root.cValue,
                 boltffiAvailableBuffer.baseAddress!,
@@ -1783,7 +1784,7 @@ public final class TaffyTree {
     public func computeLayoutWithMeasure(root: NodeId, available: AvailableSize, measure: Measure) throws {
         let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
         try boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer -> Void in
-            let boltffiError = boltffi_method_class_zd_taffy_tree_taffy_tree_compute_layout_with_measure(
+            let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree27compute_layout_with_measure(
                 self.handle,
                 root.cValue,
                 boltffiAvailableBuffer.baseAddress!,
@@ -1805,7 +1806,7 @@ public final class TaffyTree {
     public func computeLayoutWithAsyncMeasure(root: NodeId, available: AvailableSize, measure: AsyncMeasure) async throws {
         let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
         let boltffiFuture = boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer in
-            return boltffi_method_class_zd_taffy_tree_taffy_tree_compute_layout_with_async_measure(
+            return boltffi_method_class_8zd_taffy9TaffyTree33compute_layout_with_async_measure(
                 self.handle,
                 root.cValue,
                 boltffiAvailableBuffer.baseAddress!,
@@ -1815,11 +1816,11 @@ public final class TaffyTree {
         }
         return try await boltffiAsyncCall(
             futureHandle: boltffiFuture,
-            poll: boltffi_async_method_class_zd_taffy_tree_taffy_tree_compute_layout_with_async_measure_poll,
-            cancel: boltffi_async_method_class_zd_taffy_tree_taffy_tree_compute_layout_with_async_measure_cancel,
-            free: boltffi_async_method_class_zd_taffy_tree_taffy_tree_compute_layout_with_async_measure_free
+            poll: boltffi_async_method_class_8zd_taffy9TaffyTree33compute_layout_with_async_measure_poll,
+            cancel: boltffi_async_method_class_8zd_taffy9TaffyTree33compute_layout_with_async_measure_cancel,
+            free: boltffi_async_method_class_8zd_taffy9TaffyTree33compute_layout_with_async_measure_free
         ) { boltffiFuture, boltffiStatus in
-            let boltffiError = boltffi_async_method_class_zd_taffy_tree_taffy_tree_compute_layout_with_async_measure_complete(boltffiFuture, boltffiStatus)
+            let boltffiError = boltffi_async_method_class_8zd_taffy9TaffyTree33compute_layout_with_async_measure_complete(boltffiFuture, boltffiStatus)
             if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
                 defer { boltffi_free_buf(boltffiError) }
                 throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -1829,112 +1830,6 @@ public final class TaffyTree {
                 throw FfiError(message: "FFI failed in async completion with code \(boltffiStatusCode)")
             }
         }
-    }
-}
-
-/// Measures leaves for [`solve_tree`]. It takes only primitives so that the call needs no encoding on either side of
-/// the boundary: it runs thousands of times per layout (about seven questions per leaf), and with typed parameters
-/// that was most of the time.
-public protocol TreeMeasure: AnyObject {
-    func measure(
-        node: UInt32,
-        knownWidth: Float,
-        knownHeight: Float,
-        availableWidth: Float,
-        availableHeight: Float,
-        flags: UInt32
-    ) -> Size
-}
-
-private final class TreeMeasureWrapper {
-    let impl: TreeMeasure
-
-    init(_ impl: TreeMeasure) {
-        self.impl = impl
-    }
-}
-
-private var boltffiTreeMeasureVtable: ___TreeMeasureVTable = {
-    ___TreeMeasureVTable(
-        free: { handle in
-            guard handle != 0 else { return }
-            Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
-        },
-        clone: { handle in
-            guard handle != 0 else { return 0 }
-            let wrapper = Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
-            _ = wrapper.retain()
-            return handle
-        },
-        measure: { handle, node, known_width, known_height, available_width, available_height, flags in
-            guard handle != 0 else { fatalError("invalid callback handle") }
-            let wrapper = Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
-            return wrapper.impl.measure(node: node, knownWidth: known_width, knownHeight: known_height, availableWidth: available_width, availableHeight: available_height, flags: flags).cValue
-        }
-    )
-}()
-
-private enum TreeMeasureBridge {
-    private static let register: Void = {
-        boltffi_register_callback_zd_taffy_solve_tree_measure(&boltffiTreeMeasureVtable)
-    }()
-
-    static func create(_ impl: TreeMeasure) -> BoltFFICallbackHandle {
-        _ = register
-        let wrapper = TreeMeasureWrapper(impl)
-        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_zd_taffy_solve_tree_measure(handle)
-    }
-}
-
-/// Supplies the intrinsic size of leaf nodes (text, images, ...) during layout.
-///
-/// It is called synchronously from inside `compute_layout_with_measure`, possibly several
-/// times per node, and must not call back into the same tree.
-public protocol Measure: AnyObject {
-    func measure(node: NodeId, known: OptionalSize, available: AvailableSize) -> Size
-}
-
-private final class MeasureWrapper {
-    let impl: Measure
-
-    init(_ impl: Measure) {
-        self.impl = impl
-    }
-}
-
-private var boltffiMeasureVtable: ___MeasureVTable = {
-    ___MeasureVTable(
-        free: { handle in
-            guard handle != 0 else { return }
-            Unmanaged<MeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
-        },
-        clone: { handle in
-            guard handle != 0 else { return 0 }
-            let wrapper = Unmanaged<MeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
-            _ = wrapper.retain()
-            return handle
-        },
-        measure: { handle, node, known_ptr, known_len, available_ptr, available_len in
-            guard handle != 0 else { fatalError("invalid callback handle") }
-            let wrapper = Unmanaged<MeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
-            var boltffiKnownReader: WireReader = WireReader(ptr: known_ptr!, len: Int(known_len))
-            var boltffiAvailableReader: WireReader = WireReader(ptr: available_ptr!, len: Int(available_len))
-            return wrapper.impl.measure(node: NodeId(fromC: node), known: OptionalSize.decode(from: &boltffiKnownReader), available: AvailableSize.decode(from: &boltffiAvailableReader)).cValue
-        }
-    )
-}()
-
-private enum MeasureBridge {
-    private static let register: Void = {
-        boltffi_register_callback_zd_taffy_tree_measure(&boltffiMeasureVtable)
-    }()
-
-    static func create(_ impl: Measure) -> BoltFFICallbackHandle {
-        _ = register
-        let wrapper = MeasureWrapper(impl)
-        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_zd_taffy_tree_measure(handle)
     }
 }
 
@@ -1983,15 +1878,128 @@ private var boltffiAsyncMeasureVtable: ___AsyncMeasureVTable = {
 
 private enum AsyncMeasureBridge {
     private static let register: Void = {
-        boltffi_register_callback_zd_taffy_tree_async_measure(&boltffiAsyncMeasureVtable)
+        boltffi_register_callback_8zd_taffy12AsyncMeasure(&boltffiAsyncMeasureVtable)
     }()
 
     static func create(_ impl: AsyncMeasure) -> BoltFFICallbackHandle {
         _ = register
         let wrapper = AsyncMeasureWrapper(impl)
         let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
-        return boltffi_create_callback_zd_taffy_tree_async_measure(handle)
+        return boltffi_create_callback_8zd_taffy12AsyncMeasure(handle)
     }
+}
+
+/// Supplies the intrinsic size of leaf nodes (text, images, ...) during layout.
+///
+/// It is called synchronously from inside `compute_layout_with_measure`, possibly several
+/// times per node, and must not call back into the same tree.
+public protocol Measure: AnyObject {
+    func measure(node: NodeId, known: OptionalSize, available: AvailableSize) -> Size
+}
+
+private final class MeasureWrapper {
+    let impl: Measure
+
+    init(_ impl: Measure) {
+        self.impl = impl
+    }
+}
+
+private var boltffiMeasureVtable: ___MeasureVTable = {
+    ___MeasureVTable(
+        free: { handle in
+            guard handle != 0 else { return }
+            Unmanaged<MeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
+        },
+        clone: { handle in
+            guard handle != 0 else { return 0 }
+            let wrapper = Unmanaged<MeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
+            _ = wrapper.retain()
+            return handle
+        },
+        measure: { handle, node, known_ptr, known_len, available_ptr, available_len in
+            guard handle != 0 else { fatalError("invalid callback handle") }
+            let wrapper = Unmanaged<MeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
+            var boltffiKnownReader: WireReader = WireReader(ptr: known_ptr!, len: Int(known_len))
+            var boltffiAvailableReader: WireReader = WireReader(ptr: available_ptr!, len: Int(available_len))
+            return wrapper.impl.measure(node: NodeId(fromC: node), known: OptionalSize.decode(from: &boltffiKnownReader), available: AvailableSize.decode(from: &boltffiAvailableReader)).cValue
+        }
+    )
+}()
+
+private enum MeasureBridge {
+    private static let register: Void = {
+        boltffi_register_callback_8zd_taffy7Measure(&boltffiMeasureVtable)
+    }()
+
+    static func create(_ impl: Measure) -> BoltFFICallbackHandle {
+        _ = register
+        let wrapper = MeasureWrapper(impl)
+        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
+        return boltffi_create_callback_8zd_taffy7Measure(handle)
+    }
+}
+
+/// Measures leaves for [`solve_tree`]. It takes only primitives so that the call needs no encoding on either side of
+/// the boundary: it runs thousands of times per layout (about seven questions per leaf), and with typed parameters
+/// that was most of the time.
+public protocol TreeMeasure: AnyObject {
+    func measure(
+        node: UInt32,
+        knownWidth: Float,
+        knownHeight: Float,
+        availableWidth: Float,
+        availableHeight: Float,
+        flags: UInt32
+    ) -> Size
+}
+
+private final class TreeMeasureWrapper {
+    let impl: TreeMeasure
+
+    init(_ impl: TreeMeasure) {
+        self.impl = impl
+    }
+}
+
+private var boltffiTreeMeasureVtable: ___TreeMeasureVTable = {
+    ___TreeMeasureVTable(
+        free: { handle in
+            guard handle != 0 else { return }
+            Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).release()
+        },
+        clone: { handle in
+            guard handle != 0 else { return 0 }
+            let wrapper = Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!)
+            _ = wrapper.retain()
+            return handle
+        },
+        measure: { handle, node, known_width, known_height, available_width, available_height, flags in
+            guard handle != 0 else { fatalError("invalid callback handle") }
+            let wrapper = Unmanaged<TreeMeasureWrapper>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(handle))!).takeUnretainedValue()
+            return wrapper.impl.measure(node: node, knownWidth: known_width, knownHeight: known_height, availableWidth: available_width, availableHeight: available_height, flags: flags).cValue
+        }
+    )
+}()
+
+private enum TreeMeasureBridge {
+    private static let register: Void = {
+        boltffi_register_callback_8zd_taffy11TreeMeasure(&boltffiTreeMeasureVtable)
+    }()
+
+    static func create(_ impl: TreeMeasure) -> BoltFFICallbackHandle {
+        _ = register
+        let wrapper = TreeMeasureWrapper(impl)
+        let handle = UInt64(UInt(bitPattern: Unmanaged.passRetained(wrapper).toOpaque()))
+        return boltffi_create_callback_8zd_taffy11TreeMeasure(handle)
+    }
+}
+
+/// `taffy::Style::DEFAULT`; backs `Style()` on the Swift side.
+public func defaultStyle() -> Style {
+    let boltffiResult = boltffi_function_8zd_taffy13default_style()
+    defer { boltffi_free_buf(boltffiResult) }
+    return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Style.decode(from: &boltffiReader) }
 }
 
 /// Solves a flattened tree. `measure` is asked about leaves, identified by their pre-order index. Returns one
@@ -2013,7 +2021,7 @@ public func solveTree(
             let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
             return try boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer in
                 var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
-                let boltffiError = boltffi_function_zd_taffy_solve_solve_tree(
+                let boltffiError = boltffi_function_8zd_taffy10solve_tree(
                     boltffiStylesBuffer.baseAddress!,
                     UInt(boltffiStylesBuffer.count),
                     boltffiNodesBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
@@ -2052,7 +2060,7 @@ public func solveTreeAsync(
         return boltffiNodesStorage.withUnsafeBytes { boltffiNodesBuffer in
             let boltffiAvailableBytes = boltffiEncode { boltffiAvailableWriter in available.encode(to: &boltffiAvailableWriter) }
             return boltffiAvailableBytes.withUnsafeBufferPointer { boltffiAvailableBuffer in
-                return boltffi_function_zd_taffy_solve_solve_tree_async(
+                return boltffi_function_8zd_taffy16solve_tree_async(
                     boltffiStylesBuffer.baseAddress!,
                     UInt(boltffiStylesBuffer.count),
                     boltffiNodesBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
@@ -2066,12 +2074,12 @@ public func solveTreeAsync(
     }
     return try await boltffiAsyncCall(
         futureHandle: boltffiFuture,
-        poll: boltffi_async_function_zd_taffy_solve_solve_tree_async_poll,
-        cancel: boltffi_async_function_zd_taffy_solve_solve_tree_async_cancel,
-        free: boltffi_async_function_zd_taffy_solve_solve_tree_async_free
+        poll: boltffi_async_function_8zd_taffy16solve_tree_async_poll,
+        cancel: boltffi_async_function_8zd_taffy16solve_tree_async_cancel,
+        free: boltffi_async_function_8zd_taffy16solve_tree_async_free
     ) { boltffiFuture, boltffiStatus in
         var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
-        let boltffiError = boltffi_async_function_zd_taffy_solve_solve_tree_async_complete(boltffiFuture, boltffiStatus, &boltffiResult)
+        let boltffiError = boltffi_async_function_8zd_taffy16solve_tree_async_complete(boltffiFuture, boltffiStatus, &boltffiResult)
         if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
             defer { boltffi_free_buf(boltffiError) }
             throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
@@ -2083,13 +2091,6 @@ public func solveTreeAsync(
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in NodeLayout.decode(from: &boltffiReader) } }
     }
-}
-
-/// `taffy::Style::DEFAULT`; backs `Style()` on the Swift side.
-public func defaultStyle() -> Style {
-    let boltffiResult = boltffi_function_zd_taffy_style_default_style()
-    defer { boltffi_free_buf(boltffiResult) }
-    return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in Style.decode(from: &boltffiReader) }
 }
 
 private final class BoltFFIFutureState<T>: @unchecked Sendable {
