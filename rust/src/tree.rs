@@ -60,7 +60,7 @@ impl From<&taffy::Layout> for NodeLayout {
             order: l.order,
             location: l.location.into(),
             size: l.size.into(),
-            scrollable_overflow_rect: l.scrollable_overflow_rect.into(),
+            scrollable_overflow_rect: l.scrollable_overflow_rect.rect().into(),
             scrollbar_size: l.scrollbar_size.into(),
             border: l.border.into(),
             padding: l.padding.into(),

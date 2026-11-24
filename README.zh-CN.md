@@ -4,7 +4,7 @@
 
 使用 [BoltFFI](https://github.com/boltffi/boltffi) 为 [Taffy](https://github.com/DioxusLabs/taffy)(Rust 实现的 CSS Block / Flexbox / Grid 布局引擎)生成的 Swift 桥接层,面向 Apple 平台。
 
-- Taffy `0.15.1`,BoltFFI `0.32.1`
+- Taffy `0.16.0`,BoltFFI `0.32.1`
 - iOS 15+、macOS 13+(真机与模拟器切片,`arm64` 与 `x86_64`)
 - 完整的 `Style`:Block、Flexbox、Grid 全部属性(不暴露 `calc()`)
 - 叶子节点测量:`Measure` 协议、闭包或 `async` 闭包

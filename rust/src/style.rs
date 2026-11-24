@@ -727,7 +727,7 @@ mod tests {
     fn unsupported_calc_values_degrade_to_auto() {
         // `calc()` can only be built through the raw API; make sure reading one never panics.
         // Taffy only needs a non-null, 8-byte aligned tag here; the pointer is never dereferenced.
-        let handle = std::ptr::NonNull::<u64>::dangling().as_ptr() as *const ();
+        let handle = taffy::CalcHandle::from_ptr(std::ptr::NonNull::<u64>::dangling().as_ptr() as *const ());
         let calc = taffy::Dimension::calc(handle);
         assert_eq!(TaffyDimension::from(calc), TaffyDimension::Auto);
     }
