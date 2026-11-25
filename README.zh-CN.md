@@ -8,6 +8,8 @@
 - iOS 15+、macOS 13+(真机与模拟器切片,`arm64` 与 `x86_64`)
 - 完整的 `Style`:Block、Flexbox、Grid 全部属性(不暴露 `calc()`)
 - 叶子节点测量:`Measure` 协议、闭包或 `async` 闭包
+- 每个 `NodeLayout` 都带滚动信息:溢出矩形、可滚动距离(`scrollWidth` / `scrollHeight`)以及滚动从哪一端开始(`scrollOriginReversed`,`row-reverse` / `column-reverse` / `wrap-reverse` 和从右到左时为 true)
+- 布局检查:`gridLayoutInfo(node:)` 返回计算后的网格轨道、线名和子项位置;`hoistedChildren(node:)` 列出由容器负责布局的 absolute / fixed 盒子
 
 ## 安装
 

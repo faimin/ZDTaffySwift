@@ -72,6 +72,34 @@ public struct AvailableSize: Hashable, Equatable, Sendable {
     }
 }
 
+/// A pair of flags, one per physical axis.
+public struct AxisFlags: Hashable, Equatable, Sendable {
+    public var x: Bool
+    public var y: Bool
+
+    public init(x: Bool, y: Bool) {
+        self.x = x
+        self.y = y
+    }
+
+    @usableFromInline init(fromC c: ___AxisFlags) {
+        self.init(x: c.x, y: c.y)
+    }
+
+    @usableFromInline var cValue: ___AxisFlags {
+        ___AxisFlags(x: x, y: y)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> AxisFlags {
+        AxisFlags(x: reader.readBool(), y: reader.readBool())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeBool(self.x)
+        writer.writeBool(self.y)
+    }
+}
+
 /// CSS `contain` (only the flags Taffy understands).
 public struct Contain: Hashable, Equatable, Sendable {
     public var layout: Bool
@@ -116,6 +144,143 @@ public struct DimensionSize: Hashable, Equatable, Sendable {
     @inlinable func encode(to writer: inout WireWriter) {
         self.width.encode(to: &writer)
         self.height.encode(to: &writer)
+    }
+}
+
+/// The tracks of one axis of a laid-out grid.
+public struct GridAxisInfo: Hashable, Equatable, Sendable {
+    /// Number of implicit tracks before the explicit ones.
+    public var negativeImplicitTracks: UInt16
+    public var explicitTracks: UInt16
+    /// Number of implicit tracks after the explicit ones.
+    public var positiveImplicitTracks: UInt16
+    /// Where each track ended up, including the container's border and padding, `gap`, content alignment and
+    /// collapsed tracks.
+    public var positions: [TrackPosition]
+    /// Runs of `auto-fit` tracks that collapsed to nothing (indices into `positions`).
+    public var collapsedTracks: [TrackRange]
+    /// The position of the axis' only grid line when it has no tracks.
+    public var emptyAxisLine: Float?
+    /// The names of every grid line of the full grid (implicit tracks included), in line order. Empty if no line
+    /// has a name.
+    public var lineNames: [[String]]
+
+    public init(
+        negativeImplicitTracks: UInt16,
+        explicitTracks: UInt16,
+        positiveImplicitTracks: UInt16,
+        positions: [TrackPosition],
+        collapsedTracks: [TrackRange],
+        emptyAxisLine: Float?,
+        lineNames: [[String]]
+    ) {
+        self.negativeImplicitTracks = negativeImplicitTracks
+        self.explicitTracks = explicitTracks
+        self.positiveImplicitTracks = positiveImplicitTracks
+        self.positions = positions
+        self.collapsedTracks = collapsedTracks
+        self.emptyAxisLine = emptyAxisLine
+        self.lineNames = lineNames
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> GridAxisInfo {
+        GridAxisInfo(
+            negativeImplicitTracks: reader.readU16(),
+            explicitTracks: reader.readU16(),
+            positiveImplicitTracks: reader.readU16(),
+            positions: reader.readArray { reader in TrackPosition.decode(from: &reader) },
+            collapsedTracks: reader.readArray { reader in TrackRange.decode(from: &reader) },
+            emptyAxisLine: reader.readOptional { reader in reader.readF32() },
+            lineNames: reader.readArray { reader in reader.readArray { reader in reader.readString() } }
+        )
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeU16(self.negativeImplicitTracks)
+        writer.writeU16(self.explicitTracks)
+        writer.writeU16(self.positiveImplicitTracks)
+        writer.writeArray(self.positions) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeArray(self.collapsedTracks) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
+        writer.writeOptional(self.emptyAxisLine) { writer, boltffiValue0 in writer.writeF32(boltffiValue0) }
+        writer.writeArray(self.lineNames) { writer, boltffiValue0 in writer.writeArray(boltffiValue0) { writer, boltffiValue1 in writer.writeString(boltffiValue1) } }
+    }
+}
+
+/// The cells a grid item occupies, as 1-based grid line numbers.
+public struct GridItemPlacement: Hashable, Equatable, Sendable {
+    public var rowStart: UInt16
+    public var rowEnd: UInt16
+    public var columnStart: UInt16
+    public var columnEnd: UInt16
+
+    public init(
+        rowStart: UInt16,
+        rowEnd: UInt16,
+        columnStart: UInt16,
+        columnEnd: UInt16
+    ) {
+        self.rowStart = rowStart
+        self.rowEnd = rowEnd
+        self.columnStart = columnStart
+        self.columnEnd = columnEnd
+    }
+
+    @usableFromInline init(fromC c: ___GridItemPlacement) {
+        self.init(
+            rowStart: c.row_start,
+            rowEnd: c.row_end,
+            columnStart: c.column_start,
+            columnEnd: c.column_end
+        )
+    }
+
+    @usableFromInline var cValue: ___GridItemPlacement {
+        ___GridItemPlacement(
+            row_start: rowStart,
+            row_end: rowEnd,
+            column_start: columnStart,
+            column_end: columnEnd
+        )
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> GridItemPlacement {
+        GridItemPlacement(
+            rowStart: reader.readU16(),
+            rowEnd: reader.readU16(),
+            columnStart: reader.readU16(),
+            columnEnd: reader.readU16()
+        )
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeU16(self.rowStart)
+        writer.writeU16(self.rowEnd)
+        writer.writeU16(self.columnStart)
+        writer.writeU16(self.columnEnd)
+    }
+}
+
+/// What a grid container resolved to: its tracks and where each in-flow child was placed.
+public struct GridLayoutInfo: Hashable, Equatable, Sendable {
+    public var rows: GridAxisInfo
+    public var columns: GridAxisInfo
+    /// One entry per in-flow child, in child order.
+    public var items: [GridItemPlacement]
+
+    public init(rows: GridAxisInfo, columns: GridAxisInfo, items: [GridItemPlacement]) {
+        self.rows = rows
+        self.columns = columns
+        self.items = items
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> GridLayoutInfo {
+        GridLayoutInfo(rows: GridAxisInfo.decode(from: &reader), columns: GridAxisInfo.decode(from: &reader), items: reader.readArray { reader in GridItemPlacement.decode(from: &reader) })
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        self.rows.encode(to: &writer)
+        self.columns.encode(to: &writer)
+        writer.writeArray(self.items) { writer, boltffiValue0 in boltffiValue0.encode(to: &writer) }
     }
 }
 
@@ -367,7 +532,16 @@ public struct NodeLayout: Hashable, Equatable, Sendable {
     public var location: Point
     /// Size of the node's border box.
     public var size: Size
+    /// The rectangle containing the node's content and its descendants' overflow, relative to the padding box's
+    /// top-left corner. It contains the origin: `left` / `top` are not positive, `right` / `bottom` not negative.
     public var scrollableOverflowRect: Rect
+    /// Per axis, whether scrolling starts at the far edge (right / bottom). True for reversed flex directions
+    /// (`row-reverse`, `column-reverse`, `wrap-reverse`) and, horizontally, for right-to-left containers.
+    public var scrollOriginReversed: AxisFlags
+    /// How far the content can scroll horizontally: the overflow beyond the padding box, `0` if it fits.
+    public var scrollWidth: Float
+    /// How far the content can scroll vertically: the overflow beyond the padding box, `0` if it fits.
+    public var scrollHeight: Float
     public var scrollbarSize: Size
     public var border: Rect
     public var padding: Rect
@@ -378,6 +552,9 @@ public struct NodeLayout: Hashable, Equatable, Sendable {
         location: Point,
         size: Size,
         scrollableOverflowRect: Rect,
+        scrollOriginReversed: AxisFlags,
+        scrollWidth: Float,
+        scrollHeight: Float,
         scrollbarSize: Size,
         border: Rect,
         padding: Rect,
@@ -387,6 +564,9 @@ public struct NodeLayout: Hashable, Equatable, Sendable {
         self.location = location
         self.size = size
         self.scrollableOverflowRect = scrollableOverflowRect
+        self.scrollOriginReversed = scrollOriginReversed
+        self.scrollWidth = scrollWidth
+        self.scrollHeight = scrollHeight
         self.scrollbarSize = scrollbarSize
         self.border = border
         self.padding = padding
@@ -399,6 +579,9 @@ public struct NodeLayout: Hashable, Equatable, Sendable {
             location: Point.decode(from: &reader),
             size: Size.decode(from: &reader),
             scrollableOverflowRect: Rect.decode(from: &reader),
+            scrollOriginReversed: AxisFlags.decode(from: &reader),
+            scrollWidth: reader.readF32(),
+            scrollHeight: reader.readF32(),
             scrollbarSize: Size.decode(from: &reader),
             border: Rect.decode(from: &reader),
             padding: Rect.decode(from: &reader),
@@ -411,6 +594,9 @@ public struct NodeLayout: Hashable, Equatable, Sendable {
         self.location.encode(to: &writer)
         self.size.encode(to: &writer)
         self.scrollableOverflowRect.encode(to: &writer)
+        self.scrollOriginReversed.encode(to: &writer)
+        writer.writeF32(self.scrollWidth)
+        writer.writeF32(self.scrollHeight)
         self.scrollbarSize.encode(to: &writer)
         self.border.encode(to: &writer)
         self.padding.encode(to: &writer)
@@ -618,6 +804,9 @@ public struct Style: Hashable, Equatable, Sendable {
     public var textAlign: TextAlign
     public var flexDirection: FlexDirection
     public var flexWrap: FlexWrap
+    /// The minimum number of lines of a wrapping container; balanced wrapping spreads items over at least this many.
+    /// Must be at least 1 (the default).
+    public var flexLineCount: UInt16
     public var flexBasis: TaffyDimension
     public var flexGrow: Float
     public var flexShrink: Float
@@ -665,6 +854,7 @@ public struct Style: Hashable, Equatable, Sendable {
         textAlign: TextAlign,
         flexDirection: FlexDirection,
         flexWrap: FlexWrap,
+        flexLineCount: UInt16,
         flexBasis: TaffyDimension,
         flexGrow: Float,
         flexShrink: Float,
@@ -709,6 +899,7 @@ public struct Style: Hashable, Equatable, Sendable {
         self.textAlign = textAlign
         self.flexDirection = flexDirection
         self.flexWrap = flexWrap
+        self.flexLineCount = flexLineCount
         self.flexBasis = flexBasis
         self.flexGrow = flexGrow
         self.flexShrink = flexShrink
@@ -756,6 +947,7 @@ public struct Style: Hashable, Equatable, Sendable {
             textAlign: TextAlign(rawValue: reader.readI32())!,
             flexDirection: FlexDirection(rawValue: reader.readI32())!,
             flexWrap: FlexWrap(rawValue: reader.readI32())!,
+            flexLineCount: reader.readU16(),
             flexBasis: TaffyDimension.decode(from: &reader),
             flexGrow: reader.readF32(),
             flexShrink: reader.readF32(),
@@ -803,6 +995,7 @@ public struct Style: Hashable, Equatable, Sendable {
         writer.writeI32(self.textAlign.rawValue)
         writer.writeI32(self.flexDirection.rawValue)
         writer.writeI32(self.flexWrap.rawValue)
+        writer.writeU16(self.flexLineCount)
         self.flexBasis.encode(to: &writer)
         writer.writeF32(self.flexGrow)
         writer.writeF32(self.flexShrink)
@@ -816,6 +1009,62 @@ public struct Style: Hashable, Equatable, Sendable {
         writer.writeArray(self.gridTemplateRowNames) { writer, boltffiValue0 in writer.writeArray(boltffiValue0) { writer, boltffiValue1 in writer.writeString(boltffiValue1) } }
         self.gridRow.encode(to: &writer)
         self.gridColumn.encode(to: &writer)
+    }
+}
+
+/// The start and end of one grid track along its axis, relative to the container's border box.
+public struct TrackPosition: Hashable, Equatable, Sendable {
+    public var start: Float
+    public var end: Float
+
+    public init(start: Float, end: Float) {
+        self.start = start
+        self.end = end
+    }
+
+    @usableFromInline init(fromC c: ___TrackPosition) {
+        self.init(start: c.start, end: c.end)
+    }
+
+    @usableFromInline var cValue: ___TrackPosition {
+        ___TrackPosition(start: start, end: end)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> TrackPosition {
+        TrackPosition(start: reader.readF32(), end: reader.readF32())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeF32(self.start)
+        writer.writeF32(self.end)
+    }
+}
+
+/// A half-open range of track indices.
+public struct TrackRange: Hashable, Equatable, Sendable {
+    public var start: UInt32
+    public var end: UInt32
+
+    public init(start: UInt32, end: UInt32) {
+        self.start = start
+        self.end = end
+    }
+
+    @usableFromInline init(fromC c: ___TrackRange) {
+        self.init(start: c.start, end: c.end)
+    }
+
+    @usableFromInline var cValue: ___TrackRange {
+        ___TrackRange(start: start, end: end)
+    }
+
+    @inlinable static func decode(from reader: inout WireReader) -> TrackRange {
+        TrackRange(start: reader.readU32(), end: reader.readU32())
+    }
+
+    @inlinable func encode(to writer: inout WireWriter) {
+        writer.writeU32(self.start)
+        writer.writeU32(self.end)
     }
 }
 
@@ -1495,6 +1744,11 @@ public final class TaffyTree {
         self.handle = boltffi_init_class_8zd_taffy9TaffyTree3new()
     }
 
+    /// Creates an empty tree with room for `capacity` nodes, so building a big tree does not reallocate.
+    public init(withCapacity capacity: UInt32) {
+        self.handle = boltffi_init_class_8zd_taffy9TaffyTree13with_capacity(capacity)
+    }
+
     /// Rounds computed layouts to whole pixels (the default).
     public func enableRounding() {
         boltffi_method_class_8zd_taffy9TaffyTree15enable_rounding(self.handle)
@@ -1672,6 +1926,20 @@ public final class TaffyTree {
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in NodeId.decode(from: &boltffiReader) } }
     }
 
+    /// Detaches the children in `start..end` from `parent`. They stay in the tree as roots.
+    public func removeChildrenRange(parent: NodeId, start: UInt32, end: UInt32) throws {
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree21remove_children_range(
+            self.handle,
+            parent.cValue,
+            start,
+            end
+        )
+        if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
+            defer { boltffi_free_buf(boltffiError) }
+            throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
+        }
+    }
+
     public func childCount(parent: NodeId) throws -> UInt32 {
         var boltffiResult: UInt32 = UInt32()
         let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree11child_count(self.handle, parent.cValue, &boltffiResult)
@@ -1749,6 +2017,32 @@ public final class TaffyTree {
         }
         defer { boltffi_free_buf(boltffiResult) }
         return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in NodeLayout.decode(from: &boltffiReader) }
+    }
+
+    /// The absolute and fixed boxes that `node` is the containing block of, as of the last layout. `node` lays them
+    /// out instead of their parent, and their location is relative to `node`.
+    public func hoistedChildren(node: NodeId) throws -> [NodeId] {
+        var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree16hoisted_children(self.handle, node.cValue, &boltffiResult)
+        if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
+            defer { boltffi_free_buf(boltffiError) }
+            throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
+        }
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readArray { boltffiReader in NodeId.decode(from: &boltffiReader) } }
+    }
+
+    /// The tracks and item placement a grid container resolved to in the last layout, or `None` if `node` is not a
+    /// grid container or has not been laid out.
+    public func gridLayoutInfo(node: NodeId) throws -> GridLayoutInfo? {
+        var boltffiResult: FfiBuf_u8 = FfiBuf_u8()
+        let boltffiError = boltffi_method_class_8zd_taffy9TaffyTree16grid_layout_info(self.handle, node.cValue, &boltffiResult)
+        if boltffiError.ptr != nil || Int(boltffiError.len) != 0 {
+            defer { boltffi_free_buf(boltffiError) }
+            throw boltffiDecodeOwnedBuf(boltffiError.ptr, Int(boltffiError.len)) { boltffiErrorReader in TaffyError(rawValue: boltffiErrorReader.readI32())! }
+        }
+        defer { boltffi_free_buf(boltffiResult) }
+        return boltffiDecodeOwnedBuf(boltffiResult.ptr, Int(boltffiResult.len)) { boltffiReader in boltffiReader.readOptional { boltffiReader in GridLayoutInfo.decode(from: &boltffiReader) } }
     }
 
     /// The layout before rounding.

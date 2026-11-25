@@ -57,6 +57,20 @@ impl From<t::Point<f32>> for Point {
     }
 }
 
+/// A pair of flags, one per physical axis.
+#[data]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AxisFlags {
+    pub x: bool,
+    pub y: bool,
+}
+
+impl From<t::Point<bool>> for AxisFlags {
+    fn from(v: t::Point<bool>) -> Self {
+        AxisFlags { x: v.x, y: v.y }
+    }
+}
+
 #[data]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {

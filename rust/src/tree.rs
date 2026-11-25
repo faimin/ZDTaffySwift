@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 use boltffi::*;
 use taffy::{compute_leaf_layout, TaffyTree as Inner};
 
-use crate::geometry::{AvailableSize, NodeId, OptionalSize, Point, Rect, Size};
+use crate::geometry::{AvailableSize, AxisFlags, NodeId, OptionalSize, Point, Rect, Size};
+use crate::grid::GridLayoutInfo;
 use crate::style::Style;
 
 /// Errors reported by tree operations. Mirrors `taffy::TaffyError`.
@@ -47,7 +48,16 @@ pub struct NodeLayout {
     pub location: Point,
     /// Size of the node's border box.
     pub size: Size,
+    /// The rectangle containing the node's content and its descendants' overflow, relative to the padding box's
+    /// top-left corner. It contains the origin: `left` / `top` are not positive, `right` / `bottom` not negative.
     pub scrollable_overflow_rect: Rect,
+    /// Per axis, whether scrolling starts at the far edge (right / bottom). True for reversed flex directions
+    /// (`row-reverse`, `column-reverse`, `wrap-reverse`) and, horizontally, for right-to-left containers.
+    pub scroll_origin_reversed: AxisFlags,
+    /// How far the content can scroll horizontally: the overflow beyond the padding box, `0` if it fits.
+    pub scroll_width: f32,
+    /// How far the content can scroll vertically: the overflow beyond the padding box, `0` if it fits.
+    pub scroll_height: f32,
     pub scrollbar_size: Size,
     pub border: Rect,
     pub padding: Rect,
@@ -61,6 +71,9 @@ impl From<&taffy::Layout> for NodeLayout {
             location: l.location.into(),
             size: l.size.into(),
             scrollable_overflow_rect: l.scrollable_overflow_rect.rect().into(),
+            scroll_origin_reversed: l.scrollable_overflow_rect.is_reversed().into(),
+            scroll_width: l.scroll_width(),
+            scroll_height: l.scroll_height(),
             scrollbar_size: l.scrollbar_size.into(),
             border: l.border.into(),
             padding: l.padding.into(),
@@ -192,6 +205,14 @@ impl TaffyTree {
         TaffyTree { inner: Mutex::new(Core { tree: Inner::new(), live: HashSet::new() }) }
     }
 
+    /// Creates an empty tree with room for `capacity` nodes, so building a big tree does not reallocate.
+    pub fn with_capacity(capacity: u32) -> Self {
+        let capacity = capacity as usize;
+        TaffyTree {
+            inner: Mutex::new(Core { tree: Inner::with_capacity(capacity), live: HashSet::with_capacity(capacity) }),
+        }
+    }
+
     /// Rounds computed layouts to whole pixels (the default).
     pub fn enable_rounding(&self) {
         let _ = self.run(|c| {
@@ -310,6 +331,20 @@ impl TaffyTree {
         })
     }
 
+    /// Detaches the children in `start..end` from `parent`. They stay in the tree as roots.
+    pub fn remove_children_range(&self, parent: NodeId, start: u32, end: u32) -> Result<(), TaffyError> {
+        self.run(|c| {
+            c.require(parent, TaffyError::InvalidParentNode)?;
+            // Taffy panics on an invalid range, so check it up front.
+            let count = c.tree.children(parent.into())?.len();
+            let (start, end) = (start as usize, end as usize);
+            if start > end || end > count {
+                return Err(TaffyError::ChildIndexOutOfBounds);
+            }
+            Ok(c.tree.remove_children_range(parent.into(), start..end)?)
+        })
+    }
+
     pub fn child_count(&self, parent: NodeId) -> Result<u32, TaffyError> {
         self.run(|c| {
             c.require(parent, TaffyError::InvalidParentNode)?;
@@ -364,6 +399,27 @@ impl TaffyTree {
         self.run(|c| {
             c.require(node, TaffyError::InvalidInputNode)?;
             Ok(NodeLayout::from(c.tree.layout(node.into())?))
+        })
+    }
+
+    /// The absolute and fixed boxes that `node` is the containing block of, as of the last layout. `node` lays them
+    /// out instead of their parent, and their location is relative to `node`.
+    pub fn hoisted_children(&self, node: NodeId) -> Result<Vec<NodeId>, TaffyError> {
+        self.run(|c| {
+            c.require(node, TaffyError::InvalidInputNode)?;
+            Ok(c.tree.hoisted_children(node.into())?.iter().copied().map(Into::into).collect())
+        })
+    }
+
+    /// The tracks and item placement a grid container resolved to in the last layout, or `None` if `node` is not a
+    /// grid container or has not been laid out.
+    pub fn grid_layout_info(&self, node: NodeId) -> Result<Option<GridLayoutInfo>, TaffyError> {
+        self.run(|c| {
+            c.require(node, TaffyError::InvalidInputNode)?;
+            Ok(match c.tree.detailed_layout_info(node.into()) {
+                taffy::DetailedLayoutInfo::Grid(info) => Some(GridLayoutInfo::from(&**info)),
+                _ => None,
+            })
         })
     }
 
@@ -469,5 +525,189 @@ impl TaffyTree {
             }
         }
         Err(TaffyError::MeasureDidNotConverge)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::AvailableSpace;
+    use crate::grid::{GridTemplateComponent, MaxTrackSizingFunction, MinTrackSizingFunction, TrackPosition, TrackSizingFunction};
+    use crate::style::{Display, FlexDirection, LengthPercentageAuto, Overflow, Position, TaffyDimension};
+
+    fn px(v: f32) -> TaffyDimension {
+        TaffyDimension::Length(v)
+    }
+
+    fn fixed_size(width: f32, height: f32) -> crate::style::DimensionSize {
+        crate::style::DimensionSize { width: px(width), height: px(height) }
+    }
+
+    fn max_content() -> AvailableSize {
+        AvailableSize { width: AvailableSpace::MaxContent, height: AvailableSpace::MaxContent }
+    }
+
+    /// A 100x100 scroll container holding two 100x80 items.
+    fn scroll_container(direction: FlexDirection) -> (TaffyTree, NodeId) {
+        let tree = TaffyTree::new();
+        let item_style = Style { size: fixed_size(100.0, 80.0), flex_shrink: 0.0, ..Style::default() };
+        let a = tree.new_leaf(item_style.clone()).unwrap();
+        let b = tree.new_leaf(item_style).unwrap();
+        let root_style = Style {
+            display: Display::Flex,
+            flex_direction: direction,
+            overflow: crate::style::OverflowPoint { x: Overflow::Scroll, y: Overflow::Scroll },
+            size: fixed_size(100.0, 100.0),
+            ..Style::default()
+        };
+        let root = tree.new_with_children(root_style, &[a, b]).unwrap();
+        tree.compute_layout(root, max_content()).unwrap();
+        (tree, root)
+    }
+
+    #[test]
+    fn scroll_origin_follows_the_flex_direction() {
+        let (tree, root) = scroll_container(FlexDirection::Column);
+        let layout = tree.layout(root).unwrap();
+        assert_eq!(layout.scroll_origin_reversed, AxisFlags { x: false, y: false });
+
+        let (tree, root) = scroll_container(FlexDirection::ColumnReverse);
+        let layout = tree.layout(root).unwrap();
+        assert_eq!(layout.scroll_origin_reversed, AxisFlags { x: false, y: true });
+
+        let (tree, root) = scroll_container(FlexDirection::RowReverse);
+        let layout = tree.layout(root).unwrap();
+        assert_eq!(layout.scroll_origin_reversed, AxisFlags { x: true, y: false });
+    }
+
+    #[test]
+    fn scroll_extent_is_the_overflow_beyond_the_padding_box() {
+        // Two 80pt items in a 100pt column: 60pt of content is out of view, in both directions of travel.
+        for direction in [FlexDirection::Column, FlexDirection::ColumnReverse] {
+            let (tree, root) = scroll_container(direction);
+            let layout = tree.layout(root).unwrap();
+            assert_eq!(layout.scroll_height, 60.0, "{direction:?}");
+            assert_eq!(layout.scroll_width, 0.0, "{direction:?}");
+        }
+    }
+
+    #[test]
+    fn ordinary_nodes_do_not_scroll() {
+        let tree = TaffyTree::new();
+        let leaf = tree.new_leaf(Style { size: fixed_size(10.0, 10.0), ..Style::default() }).unwrap();
+        tree.compute_layout(leaf, max_content()).unwrap();
+        let layout = tree.layout(leaf).unwrap();
+        assert_eq!(layout.scroll_origin_reversed, AxisFlags { x: false, y: false });
+        assert_eq!((layout.scroll_width, layout.scroll_height), (0.0, 0.0));
+    }
+
+    #[test]
+    fn grid_info_reports_tracks_and_placement() {
+        let tree = TaffyTree::new();
+        let a = tree.new_leaf(Style::default()).unwrap();
+        let b = tree.new_leaf(Style::default()).unwrap();
+        let track = |v: f32| {
+            GridTemplateComponent::Single(TrackSizingFunction {
+                min: MinTrackSizingFunction::Length(v),
+                max: MaxTrackSizingFunction::Length(v),
+            })
+        };
+        let root_style = Style {
+            display: Display::Grid,
+            size: fixed_size(100.0, 50.0),
+            grid_template_columns: vec![track(30.0), track(70.0)],
+            grid_template_rows: vec![track(50.0)],
+            ..Style::default()
+        };
+        let root = tree.new_with_children(root_style, &[a, b]).unwrap();
+
+        // Nothing has been laid out yet.
+        assert_eq!(tree.grid_layout_info(root).unwrap(), None);
+        tree.compute_layout(root, max_content()).unwrap();
+
+        let info = tree.grid_layout_info(root).unwrap().expect("a grid container");
+        assert_eq!(info.columns.explicit_tracks, 2);
+        assert_eq!(
+            info.columns.positions,
+            vec![TrackPosition { start: 0.0, end: 30.0 }, TrackPosition { start: 30.0, end: 100.0 }]
+        );
+        assert_eq!(info.rows.positions, vec![TrackPosition { start: 0.0, end: 50.0 }]);
+        assert_eq!(info.items.len(), 2);
+        assert_eq!((info.items[1].column_start, info.items[1].column_end), (2, 3));
+        // Leaves are not grid containers.
+        assert_eq!(tree.grid_layout_info(a).unwrap(), None);
+    }
+
+    #[test]
+    fn hoisted_children_are_the_absolute_boxes_laid_out_by_a_container() {
+        let tree = TaffyTree::new();
+        let flow = tree.new_leaf(Style { size: fixed_size(10.0, 10.0), ..Style::default() }).unwrap();
+        let overlay = tree
+            .new_leaf(Style {
+                position: Position::Absolute,
+                size: fixed_size(5.0, 5.0),
+                inset: crate::style::LengthPercentageAutoRect {
+                    left: LengthPercentageAuto::Length(2.0),
+                    right: LengthPercentageAuto::Auto,
+                    top: LengthPercentageAuto::Length(3.0),
+                    bottom: LengthPercentageAuto::Auto,
+                },
+                ..Style::default()
+            })
+            .unwrap();
+        // Only a positioned container is the containing block of absolute boxes.
+        let root = tree
+            .new_with_children(
+                Style { position: Position::Relative, size: fixed_size(50.0, 50.0), ..Style::default() },
+                &[flow, overlay],
+            )
+            .unwrap();
+        tree.compute_layout(root, max_content()).unwrap();
+
+        assert_eq!(tree.hoisted_children(root).unwrap(), vec![overlay]);
+        assert_eq!(tree.layout(overlay).unwrap().location, Point { x: 2.0, y: 3.0 });
+        assert!(tree.hoisted_children(flow).unwrap().is_empty());
+    }
+
+    #[test]
+    fn remove_children_range_detaches_and_validates() {
+        let tree = TaffyTree::with_capacity(8);
+        let kids: Vec<_> = (0..4).map(|_| tree.new_leaf(Style::default()).unwrap()).collect();
+        let root = tree.new_with_children(Style::default(), &kids).unwrap();
+
+        tree.remove_children_range(root, 1, 3).unwrap();
+        assert_eq!(tree.children(root).unwrap(), vec![kids[0], kids[3]]);
+        assert_eq!(tree.parent(kids[1]), None);
+        // Detached nodes stay in the tree.
+        assert_eq!(tree.total_node_count(), 5);
+
+        // An invalid range is an error, not a panic across the FFI boundary.
+        assert_eq!(tree.remove_children_range(root, 1, 9), Err(TaffyError::ChildIndexOutOfBounds));
+        assert_eq!(tree.remove_children_range(root, 2, 1), Err(TaffyError::ChildIndexOutOfBounds));
+        assert_eq!(tree.children(root).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn balanced_wrapping_honours_the_minimum_line_count() {
+        // Four 10pt items fit one 100pt line; asking for at least two lines must split them.
+        let lines_used = |flex_line_count: u16| {
+            let tree = TaffyTree::new();
+            let item = Style { size: fixed_size(10.0, 10.0), flex_shrink: 0.0, ..Style::default() };
+            let kids: Vec<_> = (0..4).map(|_| tree.new_leaf(item.clone()).unwrap()).collect();
+            let root_style = Style {
+                display: Display::Flex,
+                flex_wrap: crate::style::FlexWrap::Balance,
+                flex_line_count,
+                size: fixed_size(100.0, 100.0),
+                ..Style::default()
+            };
+            let root = tree.new_with_children(root_style, &kids).unwrap();
+            tree.compute_layout(root, max_content()).unwrap();
+            let mut ys: Vec<u32> = kids.iter().map(|k| tree.layout(*k).unwrap().location.y as u32).collect();
+            ys.dedup();
+            ys.len()
+        };
+        assert_eq!(lines_used(1), 1);
+        assert_eq!(lines_used(2), 2);
     }
 }

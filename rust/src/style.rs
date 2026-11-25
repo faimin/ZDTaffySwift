@@ -533,6 +533,9 @@ pub struct Style {
     pub text_align: TextAlign,
     pub flex_direction: FlexDirection,
     pub flex_wrap: FlexWrap,
+    /// The minimum number of lines of a wrapping container; balanced wrapping spreads items over at least this many.
+    /// Must be at least 1 (the default).
+    pub flex_line_count: u16,
     pub flex_basis: TaffyDimension,
     pub flex_grow: f32,
     pub flex_shrink: f32,
@@ -589,6 +592,7 @@ impl From<taffy::Style> for Style {
             text_align: s.text_align.into(),
             flex_direction: s.flex_direction.into(),
             flex_wrap: s.flex_wrap.into(),
+            flex_line_count: s.flex_line_count,
             flex_basis: s.flex_basis.into(),
             flex_grow: s.flex_grow,
             flex_shrink: s.flex_shrink,
@@ -639,6 +643,7 @@ impl From<Style> for taffy::Style {
             text_align: s.text_align.into(),
             flex_direction: s.flex_direction.into(),
             flex_wrap: s.flex_wrap.into(),
+            flex_line_count: s.flex_line_count,
             flex_basis: s.flex_basis.into(),
             flex_grow: s.flex_grow,
             flex_shrink: s.flex_shrink,
@@ -690,6 +695,8 @@ mod tests {
             },
             align_self: Some(AlignItems { keyword: AlignItemsKeyword::Baseline, safety: AlignmentSafety::Unsafe }),
             contain: Contain { layout: true, paint: true },
+            flex_wrap: FlexWrap::Balance,
+            flex_line_count: 3,
             grid_template_columns: vec![
                 GridTemplateComponent::Single(TrackSizingFunction {
                     min: MinTrackSizingFunction::MinContent,

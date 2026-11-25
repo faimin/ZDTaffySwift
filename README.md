@@ -8,6 +8,8 @@ Swift bindings for [Taffy](https://github.com/DioxusLabs/taffy) (CSS Block, Flex
 - iOS 15+, macOS 13+ (device and simulator slices, `arm64` and `x86_64`)
 - Complete `Style`: Block, Flexbox and Grid properties (`calc()` is not exposed)
 - Leaf measurement via a `Measure` protocol, a closure, or an `async` closure
+- Scroll information on every `NodeLayout`: the overflow rectangle, how far it can scroll (`scrollWidth` / `scrollHeight`) and which end scrolling starts from (`scrollOriginReversed`, true for `row-reverse` / `column-reverse` / `wrap-reverse` and right-to-left)
+- Layout inspection: `gridLayoutInfo(node:)` returns the computed grid tracks, line names and item placement; `hoistedChildren(node:)` lists the absolute and fixed boxes a container lays out
 
 ## Installation
 

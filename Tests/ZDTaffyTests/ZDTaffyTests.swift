@@ -364,3 +364,112 @@ struct TreeTests {
         #expect(tree.totalNodeCount() == 8)
     }
 }
+
+@Suite("Scrolling and layout inspection")
+struct InspectionTests {
+    private func size(_ width: Float, _ height: Float) -> DimensionSize {
+        DimensionSize(width: .length(width), height: .length(height))
+    }
+
+    /// A 100x100 scroll container holding two 100x80 items that refuse to shrink.
+    private func scrollContainer(_ direction: FlexDirection) throws -> (tree: TaffyTree, root: NodeId) {
+        let tree = TaffyTree()
+        var item = Style()
+        item.size = size(100, 80)
+        item.flexShrink = 0
+        let a = try tree.newLeaf(style: item)
+        let b = try tree.newLeaf(style: item)
+
+        var rootStyle = Style()
+        rootStyle.display = .flex
+        rootStyle.flexDirection = direction
+        rootStyle.overflow = OverflowPoint(x: .scroll, y: .scroll)
+        rootStyle.size = size(100, 100)
+        let root = try tree.newWithChildren(style: rootStyle, children: [a, b])
+        try tree.computeLayout(root: root, available: .maxContent)
+        return (tree, root)
+    }
+
+    @Test func scrollOriginFollowsTheFlexDirection() throws {
+        let normal = try scrollContainer(.column)
+        #expect(try normal.tree.layout(node: normal.root).scrollOriginReversed == AxisFlags(x: false, y: false))
+
+        let columnReverse = try scrollContainer(.columnReverse)
+        #expect(try columnReverse.tree.layout(node: columnReverse.root).scrollOriginReversed == AxisFlags(x: false, y: true))
+
+        let rowReverse = try scrollContainer(.rowReverse)
+        #expect(try rowReverse.tree.layout(node: rowReverse.root).scrollOriginReversed == AxisFlags(x: true, y: false))
+    }
+
+    @Test func scrollExtentIsTheOverflowBeyondThePaddingBox() throws {
+        for direction in [FlexDirection.column, .columnReverse] {
+            let (tree, root) = try scrollContainer(direction)
+            let layout = try tree.layout(node: root)
+            #expect(layout.scrollHeight == 60)
+            #expect(layout.scrollWidth == 0)
+        }
+    }
+
+    @Test func gridLayoutInfoReportsTracksAndPlacement() throws {
+        let tree = TaffyTree()
+        let a = try tree.newLeaf(style: Style())
+        let b = try tree.newLeaf(style: Style())
+
+        func track(_ value: Float) -> GridTemplateComponent {
+            .single(TrackSizingFunction(min: .length(value), max: .length(value)))
+        }
+        var rootStyle = Style()
+        rootStyle.display = .grid
+        rootStyle.size = size(100, 50)
+        rootStyle.gridTemplateColumns = [track(30), track(70)]
+        rootStyle.gridTemplateRows = [track(50)]
+        let root = try tree.newWithChildren(style: rootStyle, children: [a, b])
+
+        #expect(try tree.gridLayoutInfo(node: root) == nil)
+        try tree.computeLayout(root: root, available: .maxContent)
+
+        let info = try #require(try tree.gridLayoutInfo(node: root))
+        #expect(info.columns.positions == [TrackPosition(start: 0, end: 30), TrackPosition(start: 30, end: 100)])
+        #expect(info.rows.positions == [TrackPosition(start: 0, end: 50)])
+        #expect(info.items.map(\.columnStart) == [1, 2])
+        #expect(try tree.gridLayoutInfo(node: a) == nil)
+    }
+
+    @Test func hoistedChildrenAreTheAbsoluteBoxes() throws {
+        let tree = TaffyTree()
+        var flowStyle = Style()
+        flowStyle.size = size(10, 10)
+        let flow = try tree.newLeaf(style: flowStyle)
+
+        var overlayStyle = Style()
+        overlayStyle.position = .absolute
+        overlayStyle.size = size(5, 5)
+        overlayStyle.inset = LengthPercentageAutoRect(left: .length(2), right: .auto, top: .length(3), bottom: .auto)
+        let overlay = try tree.newLeaf(style: overlayStyle)
+
+        var rootStyle = Style()
+        rootStyle.position = .relative
+        rootStyle.size = size(50, 50)
+        let root = try tree.newWithChildren(style: rootStyle, children: [flow, overlay])
+        try tree.computeLayout(root: root, available: .maxContent)
+
+        #expect(try tree.hoistedChildren(node: root) == [overlay])
+        #expect(try tree.layout(node: overlay).location == Point(x: 2, y: 3))
+        #expect(try tree.hoistedChildren(node: flow).isEmpty)
+    }
+
+    @Test func removeChildrenRangeDetachesAndValidates() throws {
+        let tree = TaffyTree(withCapacity: 8)
+        let kids = try (0..<4).map { _ in try tree.newLeaf(style: Style()) }
+        let root = try tree.newWithChildren(style: Style(), children: kids)
+
+        try tree.removeChildrenRange(parent: root, start: 1, end: 3)
+        #expect(try tree.children(parent: root) == [kids[0], kids[3]])
+        #expect(tree.parent(child: kids[1]) == nil)
+
+        #expect(throws: TaffyError.childIndexOutOfBounds) {
+            try tree.removeChildrenRange(parent: root, start: 1, end: 9)
+        }
+    }
+}
+

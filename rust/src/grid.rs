@@ -326,3 +326,101 @@ impl From<GridTemplateAreas> for t::GridTemplateAreas<String> {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// Computed grid information
+// ---------------------------------------------------------------------------------------
+
+/// The start and end of one grid track along its axis, relative to the container's border box.
+#[data]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrackPosition {
+    pub start: f32,
+    pub end: f32,
+}
+
+/// A half-open range of track indices.
+#[data]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrackRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+/// The tracks of one axis of a laid-out grid.
+#[data]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GridAxisInfo {
+    /// Number of implicit tracks before the explicit ones.
+    pub negative_implicit_tracks: u16,
+    pub explicit_tracks: u16,
+    /// Number of implicit tracks after the explicit ones.
+    pub positive_implicit_tracks: u16,
+    /// Where each track ended up, including the container's border and padding, `gap`, content alignment and
+    /// collapsed tracks.
+    pub positions: Vec<TrackPosition>,
+    /// Runs of `auto-fit` tracks that collapsed to nothing (indices into `positions`).
+    pub collapsed_tracks: Vec<TrackRange>,
+    /// The position of the axis' only grid line when it has no tracks.
+    pub empty_axis_line: Option<f32>,
+    /// The names of every grid line of the full grid (implicit tracks included), in line order. Empty if no line
+    /// has a name.
+    pub line_names: Vec<Vec<String>>,
+}
+
+impl From<&taffy::DetailedGridTracksInfo> for GridAxisInfo {
+    fn from(v: &taffy::DetailedGridTracksInfo) -> Self {
+        GridAxisInfo {
+            negative_implicit_tracks: v.negative_implicit_tracks,
+            explicit_tracks: v.explicit_tracks,
+            positive_implicit_tracks: v.positive_implicit_tracks,
+            positions: v.positions.iter().map(|p| TrackPosition { start: p.start, end: p.end }).collect(),
+            collapsed_tracks: v
+                .collapsed_tracks
+                .iter()
+                .map(|r| TrackRange { start: r.start as u32, end: r.end as u32 })
+                .collect(),
+            empty_axis_line: v.empty_axis_line,
+            line_names: v.iter_line_names().map(|names| names.to_vec()).collect(),
+        }
+    }
+}
+
+/// The cells a grid item occupies, as 1-based grid line numbers.
+#[data]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GridItemPlacement {
+    pub row_start: u16,
+    pub row_end: u16,
+    pub column_start: u16,
+    pub column_end: u16,
+}
+
+/// What a grid container resolved to: its tracks and where each in-flow child was placed.
+#[data]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GridLayoutInfo {
+    pub rows: GridAxisInfo,
+    pub columns: GridAxisInfo,
+    /// One entry per in-flow child, in child order.
+    pub items: Vec<GridItemPlacement>,
+}
+
+impl From<&taffy::DetailedGridInfo> for GridLayoutInfo {
+    fn from(v: &taffy::DetailedGridInfo) -> Self {
+        GridLayoutInfo {
+            rows: (&v.rows).into(),
+            columns: (&v.columns).into(),
+            items: v
+                .items
+                .iter()
+                .map(|i| GridItemPlacement {
+                    row_start: i.row_start,
+                    row_end: i.row_end,
+                    column_start: i.column_start,
+                    column_end: i.column_end,
+                })
+                .collect(),
+        }
+    }
+}
